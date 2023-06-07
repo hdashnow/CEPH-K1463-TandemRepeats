@@ -1,6 +1,10 @@
+import sys
 import cyvcf2
 import pathlib
 import typing as ty
+import plotly.express as px
+
+
 
 def distance(a: ty.List[int], b: ty.List[int], pow=1) -> int:
     """
@@ -10,7 +14,10 @@ def distance(a: ty.List[int], b: ty.List[int], pow=1) -> int:
     return (abs(a[0] - b[0])**pow + abs(a[1] - b[1])**pow)**(1/pow)
 
 def mc(v: cyvcf2.Variant) -> ty.List[int]:
-    m = [int(x) for x in v.format("MC")[0].split(',')]
+    mc = v.format("MC")[0]
+    if mc == '.':
+        return [-1]
+    m = [int(x) for x in mc.split(',')]
     return m
 
 def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant, pow: int) -> ty.Tuple[int, ty.List[int]]:
@@ -33,17 +40,22 @@ def mc_fmt(mc: ty.List[int]) -> str:
     """
     return f'{",".join(str(x) for x in mc)}'
 
-def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs: ty.List[pathlib.Path], *, pow: int = 1):
+def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
+         ty.List[pathlib.Path], *, pow: int = 1, output_prefix: str = "trgt-mc-"):
     """
     :param mom_vcf: Path to the maternal TRGT VCF file.
     :param dad_vcf: Path to the paternal TRGT VCF file.
     :param kid_vcfs: List of paths to one or more child TRGT VCF files.
     :param pow: Power to use for distance calculation. 1 is manhattan distance, 2 is euclidean distance.
+    :param output_prefix: prefix for output files.
     """
     vcfs = [cyvcf2.VCF(mom_vcf), cyvcf2.VCF(dad_vcf)]
     vcfs.extend([cyvcf2.VCF(kid_vcf) for kid_vcf in kid_vcfs])
     kid_ids = [vcf.samples[0] for vcf in vcfs[2:]]
-    print(f"#variant\tkid_id\tmom_mc\tdad_mc\tkid_mc\tmc_dist{pow}\tparent_ht")
+    fh = open(output_prefix + 'dists.txt', 'w')
+    print(f"#variant\tkid_id\tmom_mc\tdad_mc\tkid_mc\tmc_dist{pow}\tparent_ht",
+          file=fh)
+    dists = []
     for vs in zip(*vcfs):
         mom, dad = vs[:2]
         assert mom.POS == dad.POS and mom.CHROM == dad.CHROM \
@@ -51,10 +63,23 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs: ty.List[pathlib
         for i, kid in enumerate(vs[2:]):
             assert mom.POS == kid.POS and mom.CHROM == kid.CHROM \
                     and mom.REF == kid.REF
-            d, parental_ht = find_distance(mom, dad, kid, pow)
-            print(f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t{vmc_fmt(mom)}\t{vmc_fmt(dad)}\t{vmc_fmt(kid)}\t{d}\t{mc_fmt(parental_ht)}')
+            try:
+                d, parental_ht = find_distance(mom, dad, kid, pow)
+            except IndexError:
+                d = -1
+                parental_ht = [-1, -1]
+            dists.append(d)
+            print(f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t{vmc_fmt(mom)}\t{vmc_fmt(dad)}\t{vmc_fmt(kid)}\t{d}\t{mc_fmt(parental_ht)}',
+                  file=fh)
 
 
+
+    fig = px.histogram(x=dists)
+    m = ["manhattan", "euclidean"][pow - 1]
+    fig.update_layout(xaxis_range=[-1, 25], xaxis_title=f"{m}-distance between child and parent alleles")
+    fig.write_html(output_prefix + 'dists.html')
+    print(f'wrote {output_prefix}dists.html and {output_prefix}dists.txt',
+          file=sys.stderr)
 
 
 
