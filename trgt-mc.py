@@ -6,7 +6,6 @@ import numpy as np
 import plotly.express as px
 
 
-
 def distance(a: ty.List[int], b: ty.List[int], pow=1) -> int:
     """
     Calculate the distance between two alleles.
@@ -76,16 +75,12 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
             dists.append(d)
             print(f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t{vmc_fmt(mom, tag)}\t{vmc_fmt(dad, tag)}\t{vmc_fmt(kid, tag)}\t{d}\t{mc_fmt(parental_ht)}', file=fh)
 
-
-
     fig = px.histogram(x=dists)
     m = ["manhattan", "euclidean"][pow - 1]
     fig.update_layout(xaxis_range=[-1, 25], xaxis_title=f"{m}-distance between child and parent alleles ({tag})")
     fig.write_html(output_prefix + 'dists.html')
     print(f'wrote {output_prefix}dists.html and {output_prefix}dists.txt',
           file=sys.stderr)
-
-
 
 
 if __name__ == "__main__":
