@@ -44,7 +44,7 @@ def mc_fmt(mc: ty.List[int]) -> str:
 
 def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
          ty.List[pathlib.Path], *, pow: int = 1, output_prefix: str = "trgt-mc-",
-         tag: str = "MC"):
+         tag: str = "MC", exclude_chroms: list[str] = ['chrX', 'chrY']):
     """
     :param mom_vcf: Path to the maternal TRGT VCF file.
     :param dad_vcf: Path to the paternal TRGT VCF file.
@@ -52,6 +52,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
     :param pow: Power to use for distance calculation. 1 is manhattan distance, 2 is euclidean distance.
     :param output_prefix: prefix for output files.
     :param tag: VCF format field used for lengths.
+    :param exclude_chroms: chromosomes to exclude.
     """
     vcfs = [cyvcf2.VCF(mom_vcf), cyvcf2.VCF(dad_vcf)]
     vcfs.extend([cyvcf2.VCF(kid_vcf) for kid_vcf in kid_vcfs])
@@ -62,6 +63,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
     dists = []
     for vs in zip(*vcfs):
         mom, dad = vs[:2]
+        if mom.CHROM in exclude_chroms: continue
         assert mom.POS == dad.POS and mom.CHROM == dad.CHROM \
                 and mom.REF == dad.REF
         for i, kid in enumerate(vs[2:]):
