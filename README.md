@@ -12,8 +12,8 @@ python trgt-mc.py \
 	$D/${mom} \
 	$D/${dad} \
 	-k $D/${kid1,kid2}*.vcf.gz \
-    --tag AL \
-    --output-prefix trgt.
+	--tag AL MC AP \
+	--output-prefix trgt.
 ```
 
 will write: `trgt.dists.html` and `trgt.dists.txt`
