@@ -47,15 +47,15 @@ def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
     for tag in tags:
         mom_mc.append(get_tag(mom, tag))
         dad_mc.append(get_tag(dad, tag))
-        kid_mc.append(get_tag(kid, tag))
+        kid_mc.extend(get_tag(kid, tag))
     parent_mcs = generate_combinations(mom_mc, dad_mc)
     dists = [(distance(parent_mc, kid_mc, pow=pow), parent_mc) for parent_mc in parent_mcs]
     result = min(dists, key=lambda x: x[0])
 
-    parent_ht = result[1]
-    parent_i = [mom_mc.index(parent_ht[0]), dad_mc.index(parent_ht[1])]
+    #parent_ht = result[1]
+    #parent_i = [mom_mc.index(parent_ht[0]), dad_mc.index(parent_ht[1])]
 
-    return (result[0], parent_ht) #, parent_i)
+    return result
 
 def vmc_fmt(variant: cyvcf2.Variant, tag: str) -> str:
     """
@@ -85,7 +85,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
     vcfs.extend([cyvcf2.VCF(kid_vcf) for kid_vcf in kid_vcfs])
     kid_ids = [vcf.samples[0] for vcf in vcfs[2:]]
     fh = open(output_prefix + 'dists.txt', 'w')
-    header = "#variant\tkid_id\t" + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in tags) + "\tdist\tparent_ht"    
+    header = "#variant\tkid_id\t" + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in tags) + "\tdist\tparent_ht"
     print(header, file=fh)
     dists = []
     for vs in zip(*vcfs):
@@ -104,6 +104,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
             dists.append(d)
             line = f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t'
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in tags)
+            line += f"\t{d}\t{','.join(str(p) for p in parental_ht)}"
             print(line, file=fh)
 
     fig = px.histogram(x=dists)
