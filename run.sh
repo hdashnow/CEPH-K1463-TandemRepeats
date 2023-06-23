@@ -1,4 +1,4 @@
-D=/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/TRGT/
+D=/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/TRGT/old/
 
 mom=200100_M_adotto_v02.sorted.vcf.gz
 dad=2189_SF_adotto_v02.sorted.vcf.gz

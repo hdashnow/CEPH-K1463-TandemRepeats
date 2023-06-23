@@ -87,8 +87,9 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
     kid_ids = [vcf.samples[0] for vcf in vcfs[2:]]
     fh = open(output_prefix + 'dists.txt', 'w')
     header = "#variant\tkid_id\t" \
-        + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in dist_tags) + "\t" \
-        +  "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in extra_tags) \
+        + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in dist_tags)  \
+        + "\t" \
+        + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in extra_tags) \
         + "\tdist\tparent_ht"
     print(header, file=fh)
     dists = []
@@ -96,18 +97,19 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
         mom, dad = vs[:2]
         if mom.CHROM in exclude_chroms: continue
         assert mom.POS == dad.POS and mom.CHROM == dad.CHROM \
-                and mom.REF == dad.REF
+                and mom.REF == dad.REF, (mom.POS, dad.POS, mom.REF, dad.REF)
         for i, kid in enumerate(vs[2:]):
             assert mom.POS == kid.POS and mom.CHROM == kid.CHROM \
-                    and mom.REF == kid.REF
+                    and mom.REF == kid.REF, (mom.POS, kid.POS, mom.REF, kid.REF)
             try:
-                d, parental_ht = find_distance(mom, dad, kid, pow, tags)
+                d, parental_ht = find_distance(mom, dad, kid, pow, dist_tags)
             except IndexError:
                 d = -1
                 parental_ht = [-1, -1]
             dists.append(d)
             line = f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t'
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in dist_tags)
+            line += "\t"
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in extra_tags)
             line += f"\t{d}\t{','.join(str(p) for p in parental_ht)}"
             print(line, file=fh)
