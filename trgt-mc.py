@@ -71,21 +71,25 @@ def mc_fmt(mc: ty.List[int]) -> str:
 
 def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
          ty.List[pathlib.Path], *, pow: int = 1, output_prefix: str = "trgt-mc-",
-         tags: ty.List[str] = ["MC", "AL", "AP"], exclude_chroms: list[str] = ['chrX', 'chrY']):
+         dist_tags: ty.List[str] = ["MC", "AL", "AP"], extra_tags: ty.List[str] = ["SD"],
+         exclude_chroms: ty.List[str] = ['chrX', 'chrY']):
     """
     :param mom_vcf: Path to the maternal TRGT VCF file.
     :param dad_vcf: Path to the paternal TRGT VCF file.
     :param kid_vcfs: List of paths to one or more child TRGT VCF files.
     :param pow: Power to use for distance calculation. 1 is manhattan distance, 2 is euclidean distance.
     :param output_prefix: prefix for output files.
-    :param tags: VCF format field used for lengths.
+    :param dist_tags: VCF format field used for lengths.
     :param exclude_chroms: chromosomes to exclude.
     """
     vcfs = [cyvcf2.VCF(mom_vcf), cyvcf2.VCF(dad_vcf)]
     vcfs.extend([cyvcf2.VCF(kid_vcf) for kid_vcf in kid_vcfs])
     kid_ids = [vcf.samples[0] for vcf in vcfs[2:]]
     fh = open(output_prefix + 'dists.txt', 'w')
-    header = "#variant\tkid_id\t" + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in tags) + "\tdist\tparent_ht"
+    header = "#variant\tkid_id\t" \
+        + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in dist_tags) + "\t" \
+        +  "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in extra_tags) \
+        + "\tdist\tparent_ht"
     print(header, file=fh)
     dists = []
     for vs in zip(*vcfs):
@@ -103,7 +107,8 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
                 parental_ht = [-1, -1]
             dists.append(d)
             line = f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t'
-            line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in tags)
+            line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in dist_tags)
+            line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in extra_tags)
             line += f"\t{d}\t{','.join(str(p) for p in parental_ht)}"
             print(line, file=fh)
 

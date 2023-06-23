@@ -11,8 +11,9 @@ kid2=200104
 python trgt-mc.py \
 	$D/${mom} \
 	$D/${dad} \
-	-k $D/${kid1,kid2}*.vcf.gz \
-	--tag AL MC AP \
+	-k $D/${kid1}*.vcf.gz $D/${kid2}*.vcf.gz \
+	--dist-tags AL MC AP \
+	--extra-tags SD \
 	--output-prefix trgt.
 ```
 
