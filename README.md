@@ -1,7 +1,7 @@
 # distances of allele lengths in trios for STRs from TRGT
 
 ```
-D=/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/TRGT/
+D=/path/to/vcfs/TRGT/
 
 mom=200100_M_adotto_v02.sorted.vcf.gz
 dad=2189_SF_adotto_v02.sorted.vcf.gz
