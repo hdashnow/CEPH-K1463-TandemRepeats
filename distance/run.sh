@@ -1,4 +1,5 @@
-D=/path/to/vcfs/TRGT/
+D=/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/TRGT/
+
 
 mom=200100_M_adotto_v02.sorted.vcf.gz
 dad=2189_SF_adotto_v02.sorted.vcf.gz
@@ -11,5 +12,5 @@ python trgt-mc.py \
 	$D/${dad} \
 	-k $D/${kid1}*.vcf.gz $D/${kid2}*.vcf.gz \
 	--dist-tags AL MC AP \
-	--extra-tags SD \
+	--extra-tags SD GT \
 	--output-prefix trgt.

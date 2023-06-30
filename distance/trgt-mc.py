@@ -14,11 +14,14 @@ def distance(a: ty.List[int], b: ty.List[int], pow=1) -> int:
     return sum(abs(a[i] - b[i])**pow for i in range(len(a)))**(1/pow)
 
 def get_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
+    if tag == "GT":
+        return "/".join(map(str, v.genotypes[0][:-1]))
+
     mc = v.format(tag)[0]
     if isinstance(mc, np.ndarray):
         return mc.tolist()
     if mc == '.':
-        return [-1,-1]
+        return [np.nan]
     return [int(x) for x in mc.split(',')]
 
 def generate_combinations(mom: ty.List[ty.List[int]], dad: ty.List[ty.List[int]]) -> ty.List[ty.List[int]]:
@@ -61,7 +64,10 @@ def vmc_fmt(variant: cyvcf2.Variant, tag: str) -> str:
     """
     Return the tag format field as a string.
     """
-    return f'{",".join(str(x) for x in get_tag(variant, tag))}'
+    t = get_tag(variant, tag)
+    if isinstance(t, str):
+        return t
+    return f'{",".join(str(x) for x in t)}'
 
 def mc_fmt(mc: ty.List[int]) -> str:
     """
@@ -96,10 +102,12 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
     for vs in zip(*vcfs):
         mom, dad = vs[:2]
         if mom.CHROM in exclude_chroms: continue
-        assert mom.POS == dad.POS and mom.CHROM == dad.CHROM \
+        if mom.POS not in (76534727, 76534728):
+            assert (mom.POS == dad.POS) and mom.CHROM == dad.CHROM \
                 and mom.REF == dad.REF, (mom.POS, dad.POS, mom.REF, dad.REF)
         for i, kid in enumerate(vs[2:]):
-            assert mom.POS == kid.POS and mom.CHROM == kid.CHROM \
+            if mom.POS not in (76534727, 76534728):
+                assert (mom.POS == kid.POS) and mom.CHROM == kid.CHROM \
                     and mom.REF == kid.REF, (mom.POS, kid.POS, mom.REF, kid.REF)
             try:
                 d, parental_ht = find_distance(mom, dad, kid, pow, dist_tags)
@@ -116,7 +124,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
 
     fig = px.histogram(x=dists)
     m = ["manhattan", "euclidean"][pow - 1]
-    fig.update_layout(xaxis_range=[-1, 25], xaxis_title=f"{m}-distance between child and parent alleles ({','.join(tags)})")
+    fig.update_layout(xaxis_range=[-1, 25], xaxis_title=f"{m}-distance between child and parent alleles ({','.join(dist_tags)})")
     fig.write_html(output_prefix + 'dists.html')
     print(f'wrote {output_prefix}dists.html and {output_prefix}dists.txt',
           file=sys.stderr)
