@@ -17,12 +17,12 @@ def get_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
     if tag == "GT":
         return "/".join(map(str, v.genotypes[0][:-1]))
 
-    mc = v.format(tag)[0]
-    if isinstance(mc, np.ndarray):
-        return mc.tolist()
-    if mc == '.':
+    val = v.format(tag)[0]
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    if val == '.':
         return [np.nan]
-    return [int(x) for x in mc.split(',')]
+    return [int(x) for x in val.split(',')]
 
 def generate_combinations(mom: ty.List[ty.List[int]], dad: ty.List[ty.List[int]]) -> ty.List[ty.List[int]]:
     """
@@ -48,9 +48,15 @@ def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
     dad_mc = []
     kid_mc = []
     for tag in tags:
-        mom_mc.append(get_tag(mom, tag))
-        dad_mc.append(get_tag(dad, tag))
-        kid_mc.extend(get_tag(kid, tag))
+        factors = [1] # Normalization factor (to get values into bp space)
+        if tag == 'MC':
+            motifs = kid.INFO.get('MOTIFS').split(',')
+            factors = [len(x) for x in motifs]
+        if tag == 'AP':
+            factors = get_tag(kid, 'AL')
+        mom_mc.append([x*f for x, f in zip(get_tag(mom, tag), factors)])
+        dad_mc.append([x*f for x, f in zip(get_tag(dad, tag), factors)])
+        kid_mc.extend([x*f for x, f in zip(get_tag(kid, tag), factors)])
     parent_mcs = generate_combinations(mom_mc, dad_mc)
     dists = [(distance(parent_mc, kid_mc, pow=pow), parent_mc) for parent_mc in parent_mcs]
     result = min(dists, key=lambda x: x[0])
@@ -96,15 +102,16 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
         + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in dist_tags)  \
         + "\t" \
         + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in extra_tags) \
+        + "\tmotifs" \
         + "\tdist\tparent_ht"
     print(header, file=fh)
     dists = []
     for vs in zip(*vcfs):
         mom, dad = vs[:2]
         if mom.CHROM in exclude_chroms: continue
-        if mom.POS not in (76534727, 76534728):
-            assert (mom.POS == dad.POS) and mom.CHROM == dad.CHROM \
-                and mom.REF == dad.REF, (mom.POS, dad.POS, mom.REF, dad.REF)
+        if not (mom.POS == dad.POS and mom.CHROM == dad.CHROM and mom.REF == dad.REF):
+            sys.stderr.write(f'Warning: postition mismatch: {mom.CHROM,mom.POS,dad.CHROM,dad.POS}\n'.format())
+            continue
         for i, kid in enumerate(vs[2:]):
             if mom.POS not in (76534727, 76534728):
                 assert (mom.POS == kid.POS) and mom.CHROM == kid.CHROM \
@@ -115,10 +122,13 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
                 d = -1
                 parental_ht = [-1, -1]
             dists.append(d)
+            motifs = kid.INFO.get('MOTIFS')
+
             line = f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t'
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in dist_tags)
             line += "\t"
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in extra_tags)
+            line += f"\t{motifs}"
             line += f"\t{d}\t{','.join(str(p) for p in parental_ht)}"
             print(line, file=fh)
 
