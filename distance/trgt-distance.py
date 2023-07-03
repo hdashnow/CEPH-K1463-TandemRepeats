@@ -89,9 +89,11 @@ def vmc_fmt(variant: cyvcf2.Variant, tag: str) -> str:
     try:
         t = get_norm_tag(variant, tag)
     except ValueError:
-        t = 'NA'
+        t = [np.nan]
     if isinstance(t, str):
         return t
+    if tag == 'GT':
+        return ''.join(t)
     return f'{",".join(str(x) for x in t)}'
 
 def mc_fmt(mc: ty.List[int]) -> str:
