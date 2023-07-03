@@ -7,7 +7,7 @@ kid1=200103
 kid2=200104
 
 
-python trgt-mc.py \
+python trgt-distance.py \
 	$D/${mom} \
 	$D/${dad} \
 	-k $D/${kid1}*.vcf.gz $D/${kid2}*.vcf.gz \
