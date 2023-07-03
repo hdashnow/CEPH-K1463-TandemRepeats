@@ -19,6 +19,9 @@ def get_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
         return "/".join(map(str, v.genotypes[0][:-1]))
 
     val = v.format(tag)[0]
+    for i in val:
+        if val == -2147483648:
+            return [np.nan]
     if isinstance(val, np.ndarray):
         return val.tolist()
     if val == '.':
@@ -37,7 +40,7 @@ def get_norm_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
     for i in vals:
         if type(i) != str:
             if i < 0:
-                raise ValueError(f'{v.POS} {tag} is negative: {i}') 
+                raise AssertionError(f'{v.POS} {tag} is negative: {i}') 
             if np.isnan(i):
                 raise ValueError # These are expected missing values
 
