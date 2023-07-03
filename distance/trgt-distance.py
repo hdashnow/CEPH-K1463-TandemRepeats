@@ -4,6 +4,7 @@ import pathlib
 import typing as ty
 import numpy as np
 import plotly.express as px
+from itertools import cycle
 
 
 def distance(a: ty.List[int], b: ty.List[int], pow=1) -> int:
@@ -23,6 +24,24 @@ def get_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
     if val == '.':
         return [np.nan]
     return [int(x) for x in val.split(',')]
+
+def get_norm_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
+    factors = [1] # Normalization factor (to get values into bp space)
+    if tag == 'MC':
+        motifs = v.INFO.get('MOTIFS').split(',')
+        factors = [len(x) for x in motifs]
+    if tag == 'AP':
+        factors = get_tag(v, 'AL')
+    
+    vals = get_tag(v, tag)
+    for i in vals:
+        if type(i) != str:
+            if i < 0:
+                raise ValueError(f'{v.POS} {tag} is negative: {i}') 
+            if np.isnan(i):
+                raise ValueError # These are expected missing values
+
+    return [x*f for x, f in zip(vals, cycle(factors))]
 
 def generate_combinations(mom: ty.List[ty.List[int]], dad: ty.List[ty.List[int]]) -> ty.List[ty.List[int]]:
     """
@@ -48,15 +67,12 @@ def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
     dad_mc = []
     kid_mc = []
     for tag in tags:
-        factors = [1] # Normalization factor (to get values into bp space)
-        if tag == 'MC':
-            motifs = kid.INFO.get('MOTIFS').split(',')
-            factors = [len(x) for x in motifs]
-        if tag == 'AP':
-            factors = get_tag(kid, 'AL')
-        mom_mc.append([x*f for x, f in zip(get_tag(mom, tag), factors)])
-        dad_mc.append([x*f for x, f in zip(get_tag(dad, tag), factors)])
-        kid_mc.extend([x*f for x, f in zip(get_tag(kid, tag), factors)])
+        try:
+            mom_mc.append(get_norm_tag(mom, tag))
+            dad_mc.append(get_norm_tag(dad, tag))
+            kid_mc.extend(get_norm_tag(kid, tag))
+        except ValueError:
+            raise ValueError
     parent_mcs = generate_combinations(mom_mc, dad_mc)
     dists = [(distance(parent_mc, kid_mc, pow=pow), parent_mc) for parent_mc in parent_mcs]
     result = min(dists, key=lambda x: x[0])
@@ -70,7 +86,10 @@ def vmc_fmt(variant: cyvcf2.Variant, tag: str) -> str:
     """
     Return the tag format field as a string.
     """
-    t = get_tag(variant, tag)
+    try:
+        t = get_norm_tag(variant, tag)
+    except ValueError:
+        t = 'NA'
     if isinstance(t, str):
         return t
     return f'{",".join(str(x) for x in t)}'
@@ -118,7 +137,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
                     and mom.REF == kid.REF, (mom.POS, kid.POS, mom.REF, kid.REF)
             try:
                 d, parental_ht = find_distance(mom, dad, kid, pow, dist_tags)
-            except IndexError:
+            except ValueError:
                 d = -1
                 parental_ht = [-1, -1]
             dists.append(d)
