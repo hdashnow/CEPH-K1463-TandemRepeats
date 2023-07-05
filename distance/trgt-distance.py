@@ -145,7 +145,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
             dists.append(d)
             motifs = kid.INFO.get('MOTIFS')
 
-            line = f'{mom.CHROM}:{mom.POS}:{mom.REF}:{"".join(mom.ALT) or "."}\t{kid_ids[i]}\t'
+            line = f'{mom.CHROM}:{mom.POS}:{mom.REF}\t{kid_ids[i]}\t'
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in dist_tags)
             line += "\t"
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in extra_tags)
