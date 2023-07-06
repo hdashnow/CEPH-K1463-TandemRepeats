@@ -1,0 +1,14 @@
+name: trgtdist
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - python=3*
+  - cyvcf2
+  - pathlib
+  - typing
+  - numpy
+  - plotly
+  - defopt
