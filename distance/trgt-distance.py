@@ -61,6 +61,17 @@ def generate_combinations(mom: ty.List[ty.List[int]], dad: ty.List[ty.List[int]]
     return result
 
 
+def min_distance(mom_mc: ty.List[ty.List[int]], dad_mc: ty.List[ty.List[int]],
+                kid_mc: ty.List[int], power: int) -> ty.Tuple[int, ty.List[int]]:
+    """
+    >>> min_distance([[6021, 15812], [6032, 15805], [5828.002823531628, 15366.006873607635]], [[3874, 4398], [3886, 4408], [3730.9991244077682, 4270.000632762909]], [4398, 15808, 4408, 15805, 4270.000632762909, 15317.999767303467], power = 1)
+    (52.0071063041687, [15812, 4398, 15805, 4408, 15366.006873607635, 4270.000632762909])
+    """
+    parent_mcs = generate_combinations(mom_mc, dad_mc)
+    dists = [(distance(parent_mc, kid_mc, power=power), parent_mc) for parent_mc in parent_mcs]
+    result = min(dists, key=lambda x: x[0])
+    return result
+
 def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
                   power: int, tags: ty.List[str]) -> ty.Tuple[int, ty.List[int]]: #, ty.List[int]]:
     mom_mc = []
@@ -73,14 +84,8 @@ def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
             kid_mc.extend(get_norm_tag(kid, tag))
         except ValueError:
             raise ValueError
-    parent_mcs = generate_combinations(mom_mc, dad_mc)
-    dists = [(distance(parent_mc, kid_mc, pow=pow), parent_mc) for parent_mc in parent_mcs]
-    result = min(dists, key=lambda x: x[0])
 
-    #parent_ht = result[1]
-    #parent_i = [mom_mc.index(parent_ht[0]), dad_mc.index(parent_ht[1])]
-
-    return result
+    return min_distance(mom_mc, dad_mc, kid_mc, power = power)
 
 def vmc_fmt(variant: cyvcf2.Variant, tag: str) -> str:
     """
