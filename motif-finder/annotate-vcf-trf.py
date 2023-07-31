@@ -6,6 +6,8 @@ import sys
 import cyvcf2
 import pathlib
 import typing as ty
+import time
+start_time = time.time()
 
 def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
     """
@@ -27,15 +29,13 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
             for label, seq in zip(['REF'] + [f'ALT.{i}' for i in range(len(v.ALT))], [v.REF] + v.ALT):
                 fasta.write(f'>{locid}-{label}\n{seq}\n')
 
-    # Run TRF-mod on the fasta file and write output to trfmod_out
-    trfmod = pathlib.Path(trfmod).resolve()
-    fasta = pathlib.Path(fastafile).resolve()
-    trfmod_command = f'{trfmod} {fasta}'.split()        
-    #print(''.join(trfmod_command))
-    result = subprocess.run(trfmod_command, capture_output=True, text=True)
+    # Run TRF-mod on the fasta file and save in an iterator
+    trf_results = run_trf(trfmod, fastafile)
 
     # Note, positions are relative to the start of the locus, not the chromosome
     trfmod_header = 'VCFid start end period copyNum fracMatch fracGap score entroy TRFmotif'.split()
+
+    # Write the TRF-mod output to a file?
     # with open(f'{output}.trfmod', 'w') as trfmod_out:
     #     trfmod_out.write('\t'.join(trfmod_header) + '\n')
     #     trfmod_out.write(result.stdout)
@@ -52,7 +52,7 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
         v = next(vcfreader)
         vcf_locus = v.CHROM + '-' + str(v.POS)
 
-        trfmod_lines = iter(result.stdout.split('\n'))
+        trfmod_lines = trf_results
         for trfmod_line in trfmod_lines:
             # Parse the TRF-mod line
             if len(trfmod_line) == 0:
@@ -81,8 +81,26 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
                 except StopIteration:
                     break
 
+def run_trf(trfmod, fastafile):
+    trfmod = pathlib.Path(trfmod).resolve()
+    fasta = pathlib.Path(fastafile).resolve()
+    trfmod_command = f'{trfmod} {fasta}'.split()
+
+    proc = subprocess.Popen(trfmod_command, stdout=subprocess.PIPE)
+
+    while True:
+        output = proc.stdout.readline()
+
+        if output == b'' and proc.poll() is not None:
+            break
+        if output:
+            yield output.decode('utf-8').strip()
+
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
     import defopt
     defopt.run(main)
+
+    elapsed = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
+    print(f'Elapsed time: {elapsed}')
