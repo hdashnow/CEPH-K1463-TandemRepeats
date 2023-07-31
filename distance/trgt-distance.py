@@ -61,6 +61,17 @@ def generate_combinations(mom: ty.List[ty.List[int]], dad: ty.List[ty.List[int]]
     return result
 
 
+def flip(arr):
+    """
+    >>> flip([0, 2, 0, 2])
+    [2, 0, 2, 0]
+    """
+    result = arr[:]
+    result[::2] = arr[1::2]
+    result[1::2] = arr[::2]
+    return result
+
+
 def min_distance(mom_mc: ty.List[ty.List[int]], dad_mc: ty.List[ty.List[int]],
                 kid_mc: ty.List[int], power: int) -> ty.Tuple[int, ty.List[int]]:
     """
@@ -69,7 +80,15 @@ def min_distance(mom_mc: ty.List[ty.List[int]], dad_mc: ty.List[ty.List[int]],
     """
     parent_mcs = generate_combinations(mom_mc, dad_mc)
     dists = [(distance(parent_mc, kid_mc, power=power), parent_mc) for parent_mc in parent_mcs]
-    result = min(dists, key=lambda x: x[0])
+    result_md = min(dists, key=lambda x: x[0])
+
+    parent_mcs = generate_combinations(dad_mc, mom_mc)
+    dists = [(distance(parent_mc, kid_mc, power=power), parent_mc) for parent_mc in parent_mcs]
+    result_dm = min(dists, key=lambda x: x[0])
+    # flip order of dm (dad/mom) to match md (mom/dad)
+    result_dm = (result_dm[0], flip(result_dm[1]))
+
+    result = min([result_md, result_dm], key=lambda x: x[0])
     return result
 
 def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
