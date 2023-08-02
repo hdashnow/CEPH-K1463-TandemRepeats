@@ -81,6 +81,12 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
                 except StopIteration:
                     break
 
+            try:
+                v = next(vcfreader)
+                vcf_locus = v.CHROM + '-' + str(v.POS)
+            except StopIteration:
+                break
+
 def run_trf(trfmod, fastafile):
     trfmod = pathlib.Path(trfmod).resolve()
     fasta = pathlib.Path(fastafile).resolve()
@@ -94,7 +100,8 @@ def run_trf(trfmod, fastafile):
         if output == b'' and proc.poll() is not None:
             break
         if output:
-            yield output.decode('utf-8').strip()
+            if len(output) > 0:
+                yield output.decode('utf-8').strip()
 
 if __name__ == "__main__":
     import doctest
