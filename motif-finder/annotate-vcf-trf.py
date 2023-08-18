@@ -7,6 +7,7 @@ import cyvcf2
 import pathlib
 import typing as ty
 import time
+import numpy as np
 start_time = time.time()
 
 def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
@@ -24,68 +25,169 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
     # Write alleles in fasta format for TRF-mod to read
     fastafile = f'{output}.fasta'
     with open(fastafile, 'w') as fasta:
-        for v in vcfreader:
-            locid = '-'.join(str(x) for x in [v.CHROM, v.POS])
-            for label, seq in zip(['REF'] + [f'ALT.{i}' for i in range(len(v.ALT))], [v.REF] + v.ALT):
+        for vcf_line in vcfreader:
+            locid = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS])
+            for label, seq in zip(['REF'] + [f'ALT.{i}' for i in range(len(vcf_line.ALT))], [vcf_line.REF] + vcf_line.ALT):
                 fasta.write(f'>{locid}-{label}\n{seq}\n')
 
     # Run TRF-mod on the fasta file and save in an iterator
-    trf_results = run_trf(trfmod, fastafile)
+    trfmod_lines = run_trf(trfmod, fastafile)
 
     # Note, positions are relative to the start of the locus, not the chromosome
-    trfmod_header = 'VCFid start end period copyNum fracMatch fracGap score entroy TRFmotif'.split()
+    trfmod_header = 'VCFid TRFstart TRFend TRFperiod TRFcopyNum TRFfracMatch TRFfracGap TRFscore TRFentroy TRFmotif'.split()
 
-    # Write the TRF-mod output to a file?
-    # with open(f'{output}.trfmod', 'w') as trfmod_out:
-    #     trfmod_out.write('\t'.join(trfmod_header) + '\n')
-    #     trfmod_out.write(result.stdout)
 
     # Match up the TRF-mod output with the VCF
     # Iterate through the VCF and the TRF-mod output in parallel. Need to keep track of 
     # the current locus as there are multiple lines per locus in the TRF-mod output
-    trfmod_cols = ['VCFid', 'start', 'end', 'period', 'copyNum',  'TRFmotif']
-    header = ['CHROM', 'POS', 'TRGTmotifs', 'TRGTstruc'] + trfmod_cols + ['match']
+    trf_cols = ['TRFstart', 'TRFend', 'TRFperiod', 'TRFcopyNum', 'TRFfracMatch', 'VCFid', 'TRFmotif']
+    vcf_cols1 = ['CHROM', 'POS', 'TRGTmc']
+    vcf_cols2 = ['TRGTmotif', 'TRGTstruc']
+    header =  vcf_cols1 + [ 'allele_type', 'match'] + trf_cols + vcf_cols2
     with open(f'{output}.tsv', 'w') as outfh:
         outfh.write('#' + '\t'.join(header) + '\n')
 
         vcfreader = cyvcf2.VCF(vcf)
-        v = next(vcfreader)
-        vcf_locus = v.CHROM + '-' + str(v.POS)
 
-        trfmod_lines = trf_results
-        for trfmod_line in trfmod_lines:
+        vcf_line = next(vcfreader) # Read the first line of the VCF
+        trf_line = next(trfmod_lines) # Read the first line of the TRF-mod output
+
+        while True:
+            # Parse the VCF line
+            vcf_locus = GenomicPos.from_cyvcf(vcf_line)
             # Parse the TRF-mod line
-            if len(trfmod_line) == 0:
-                continue
-            trfmod_fields = trfmod_line.split()
+            # if len(trf_line) == 0:
+            #     continue
+            trfmod_fields = trf_line.split()
             trfmod_dict = dict(zip(trfmod_header, trfmod_fields))
-            trfmod_locus = '-'.join(trfmod_dict['VCFid'].split('-')[0:2])
+            trfmod_locus = GenomicPos.from_chrom_pos(trfmod_dict['VCFid'].split('-')[0],
+                                                     int(trfmod_dict['VCFid'].split('-')[1]))
             
-            # If we've moved on to a new locus, read the next line from TRF-mod
-            while trfmod_locus == vcf_locus:
-                vcf_motifs = v.INFO.get('MOTIFS')
+            # If they match, write the output
+            if trfmod_locus == vcf_locus:
+                # What type of allele is this?
+                trfmod_allele = trfmod_dict['VCFid'].split('-')[2]
+                vcf_motifs = vcf_line.INFO.get('MOTIFS')
+
                 if vcf_motifs == trfmod_dict['TRFmotif']:
                     match = True
                 else:
                     match = False
+
+                if trfmod_allele.startswith('ALT'):
+                    allele_type = 'ALT'
+                    allele_pos = int(trfmod_allele.lstrip('ALT.'))
+                    mc = int(vcf_line.format('MC')[0].split(',')[allele_pos])
+
+                elif trfmod_allele == 'REF':
+                    allele_type = 'REF'
+                    mc = None
+                    match = None
+
                 # Write output as a tab-separated file
                 outfh.write('\t'.join([ str(x) for x in
-                    [v.CHROM, v.POS, 
-                    vcf_motifs, v.INFO.get('STRUC')] +
-                    [trfmod_dict[field] for field in trfmod_cols] + [match]
+                    [vcf_line.CHROM, vcf_line.POS, mc] +
+                    [allele_type, match] +
+                    [trfmod_dict[field] for field in trf_cols] +
+                    [vcf_motifs, vcf_line.INFO.get('STRUC')]
+
                 ]) + '\n')
-                
+
                 try:
-                    v = next(vcfreader)
-                    vcf_locus = v.CHROM + '-' + str(v.POS)
+                    trf_line = next(trfmod_lines)
+                    continue
+
                 except StopIteration:
                     break
 
-            try:
-                v = next(vcfreader)
-                vcf_locus = v.CHROM + '-' + str(v.POS)
-            except StopIteration:
-                break
+            # Choose which file to read next
+            # If the TRF-mod locus is before the VCF locus, read the next TRF-mod line
+            if trfmod_locus < vcf_locus:
+                try:
+                    trf_line = next(trfmod_lines)
+                except StopIteration:
+                    break
+
+            else:
+                # If the TRF-mod locus is after the VCF locus, read the next VCF line
+                if trfmod_locus > vcf_locus:
+                    try:
+                        vcf_line = next(vcfreader)
+                    except StopIteration:
+                        break
+                # If the TRF-mod locus is the same as the VCF locus, read both
+                elif trfmod_locus == vcf_locus:
+                    try:
+                        trf_line = next(trfmod_lines)
+                        vcf_line = next(vcfreader)
+                    except StopIteration:
+                        break
+
+def norm_chrom(chrom: str) -> str:
+    """
+    Normalize the chromosome name. This may fail for species with more than 90 autosomes or Z/W.
+    >>> norm_chrom('chr1')
+    '01'
+    >>> norm_chrom('chrX')
+    '91'
+    >>> norm_chrom('chr2')
+    '02'
+    """
+    chrom = chrom.lstrip('chr')
+    if chrom == 'X':
+        chrom = '91'
+    elif chrom == 'Y':
+        chrom = '92'
+    elif chrom == 'M':
+        chrom = '93'
+    chrom = chrom.zfill(2)
+    return chrom
+
+
+# Genomic coordinates object
+class GenomicPos(ty.NamedTuple):
+    chrom: str
+    pos: int
+
+    # Initialize from a cyvcf2 record
+    @classmethod
+    def from_cyvcf(cls, record: cyvcf2.Variant) -> 'GenomicPos':
+        return cls(record.CHROM, record.POS)
+    # Initialize from chrom and pos
+    @classmethod
+    def from_chrom_pos(cls, chrom: str, pos: int) -> 'GenomicPos':
+        return cls(chrom, pos)
+        
+    # Print as a string
+    def __str__(self):
+        return f'{self.chrom}:{self.pos}'
+
+    # Compare two genomic positions
+    def __lt__(self, other):
+        """
+        >>> GenomicPos('chr22', 200) < GenomicPos('chrX', 100)
+        True
+        >>> GenomicPos('chr1', 100) < GenomicPos('chr1', 1000)
+        True
+        >>> GenomicPos('chr9', 1) < GenomicPos('chr10', 1)
+        True
+        """
+
+        if self.chrom == other.chrom:
+            return self.pos < other.pos
+        else:
+            # Add leading zeros to the chromosome name
+            # To make sure that chr10 comes after chr9 and not before chr1
+
+            # Remove leading 'chr' if present
+            self_chrom_num = norm_chrom(self.chrom)
+            other_chrom_num = norm_chrom(other.chrom)
+
+            return self_chrom_num < other_chrom_num
+
+    # Test if equal
+    def __eq__(self, other):
+        return self.chrom == other.chrom and self.pos == other.pos
 
 def run_trf(trfmod, fastafile):
     trfmod = pathlib.Path(trfmod).resolve()
@@ -110,4 +212,4 @@ if __name__ == "__main__":
     defopt.run(main)
 
     elapsed = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
-    print(f'Elapsed time: {elapsed}')
+    print(f'Elapsed time: {elapsed}', file=sys.stderr)
