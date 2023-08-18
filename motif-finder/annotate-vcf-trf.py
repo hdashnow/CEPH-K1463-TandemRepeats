@@ -49,6 +49,15 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
 
         vcfreader = cyvcf2.VCF(vcf)
 
+        # create a new vcf Writer using the input vcf as a template.
+        vcfreader.add_info_to_header({'ID': 'REFmc',
+                                      'Description': 'Reference allele motif count calculated by TandemRepeatsFinder', 
+                                      'Type': 'Character', 'Number': '1'})
+        vcfreader.add_format_to_header({'ID': 'ALTmc',
+                                        'Description': 'Alternate allele motif count calculated by TandemRepeatsFinder', 
+                                        'Type': 'Character', 'Number': '1'})
+        outvcf = cyvcf2.Writer(f'{output}.vcf', vcfreader)
+
         vcf_line = next(vcfreader) # Read the first line of the VCF
         trf_line = next(trfmod_lines) # Read the first line of the TRF-mod output
 
@@ -78,11 +87,20 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
                     allele_type = 'ALT'
                     allele_pos = int(trfmod_allele.lstrip('ALT.'))
                     mc = int(vcf_line.format('MC')[0].split(',')[allele_pos])
+                    if match:
+                        vcf_line.set_format('ALTmc', str(np.array([trfmod_dict['TRFcopyNum']])))
+                    else:
+                        vcf_line.set_format('ALTmc', '0')
 
                 elif trfmod_allele == 'REF':
                     allele_type = 'REF'
                     mc = None
                     match = None
+                    if match:
+                        vcf_line.INFO['REFmc'] = trfmod_dict['TRFcopyNum']
+                    else:
+                        vcf_line.INFO['REFmc'] = '0'
+
 
                 # Write output as a tab-separated file
                 outfh.write('\t'.join([ str(x) for x in
@@ -90,7 +108,6 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
                     [allele_type, match] +
                     [trfmod_dict[field] for field in trf_cols] +
                     [vcf_motifs, vcf_line.INFO.get('STRUC')]
-
                 ]) + '\n')
 
                 try:
@@ -109,6 +126,9 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
                     break
 
             else:
+                # Write the VCF line to the output VCF (since we're finished with this VCF line at this point)
+                outvcf.write_record(vcf_line)
+
                 # If the TRF-mod locus is after the VCF locus, read the next VCF line
                 if trfmod_locus > vcf_locus:
                     try:
@@ -157,7 +177,7 @@ class GenomicPos(ty.NamedTuple):
     @classmethod
     def from_chrom_pos(cls, chrom: str, pos: int) -> 'GenomicPos':
         return cls(chrom, pos)
-        
+    
     # Print as a string
     def __str__(self):
         return f'{self.chrom}:{self.pos}'
@@ -212,4 +232,4 @@ if __name__ == "__main__":
     defopt.run(main)
 
     elapsed = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
-    print(f'Elapsed time: {elapsed}', file=sys.stderr)
+    print(f'Elapsed time: {elapsed}')
