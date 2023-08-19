@@ -1,0 +1,16 @@
+name: trgtcat
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - python=3*
+  - pathlib
+  - typing
+  - numpy
+  - plotly
+  - defopt
+  - bioframe
+  - pandas
+
