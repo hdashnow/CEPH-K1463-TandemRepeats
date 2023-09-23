@@ -1,0 +1,12 @@
+name: tr-solve
+channel_priority: strict
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - python=3*
+  - cyvcf2
+  - pathlib
+  - defopt
+  - pysam
