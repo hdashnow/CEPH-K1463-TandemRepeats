@@ -99,13 +99,27 @@ def main(infile: pathlib.Path, outfile: str = 'stdout', *,
     else:
         f = open(outfile, 'w')
 
-    for (chrom, start, end), alts in sequences:
+    for (chrom, start_orig, end_orig), alts in sequences:
         for alt in alts:
             motifs, bounds = runtrsolve(alt, trsolve=trtools)
             
             if len(motifs) == 0:
                 f.write(f'{alt}\tNone\n')
                 continue
+            start = int(start_orig)
+            end = int(end_orig)
+
+            # Trim the bounds to the bases covered by the motifs
+            if bounds[0] is not None:
+                start += bounds[0]
+            if bounds[1] is not None:
+                end = start + bounds[1] - bounds[0]
+
+            if start > int(end_orig):
+                start = int(end_orig)
+            if end < int(start_orig):
+                end = int(start_orig)
+
             unique_motifs = dict.fromkeys(motifs) # can use set(motifs) if order doesn't matter
             motifs_str = ','.join(unique_motifs)
             struc = ''.join([f'({motif})n' for motif in motifs])
