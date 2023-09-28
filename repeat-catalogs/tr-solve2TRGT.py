@@ -31,7 +31,7 @@ def extractfasta(bed: pathlib.Path, fasta: pathlib.Path, maxout: int = 10000):
                 continue
             try:
                 sequence = ref.fetch(locus[0], int(locus[1]), int(locus[2]))
-            except ValueError as e:
+            except KeyError as e:
                 sys.stderr.write(f'Error: {e}\n')
                 continue
             yield (locus[0], locus[1], locus[2]), [sequence]
