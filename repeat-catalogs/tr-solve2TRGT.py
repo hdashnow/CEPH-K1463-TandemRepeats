@@ -29,7 +29,11 @@ def extractfasta(bed: pathlib.Path, fasta: pathlib.Path, maxout: int = 10000):
             locus = line.strip().split()
             if int(locus[2]) - int(locus[1]) > maxout:
                 continue
-            sequence = ref.fetch(locus[0], int(locus[1]), int(locus[2]))
+            try:
+                sequence = ref.fetch(locus[0], int(locus[1]), int(locus[2]))
+            except ValueError as e:
+                sys.stderr.write(f'Error: {e}\n')
+                continue
             yield (locus[0], locus[1], locus[2]), [sequence]
 
 def runtrsolve(sequence: str, trsolve: pathlib.Path):
@@ -51,16 +55,25 @@ def runtrsolve(sequence: str, trsolve: pathlib.Path):
     (['AT'], [8, 32])
     """
     command = f'echo {sequence} | {trsolve}'
-    result = subprocess.run(command, shell=True, check=True, 
+    try:
+        result = subprocess.run(command, shell=True, check=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f'Error: {command}\n')
+        sys.stderr.write(f'{e.stderr.decode("utf-8")}\n')
+        return [], [None, None] #XXX: Should this be an error?
     motif_string = result.stdout.decode('utf-8').strip().split('\t')
 
-    if len(motif_string) == 1:
+    if len(motif_string) < 3: # No motif structure reported
         return [], [None, None]
     
     # Parse the motifs and their start/end positions
     # e.g. 'CAG(0-18),A(18-38)' -> ['CAG', 'A'], [0, 38]
-    re_motifs = re.compile(r'([A-Z]+)\(([0-9]+)-([0-9]+)\)').findall(motif_string[2])
+    try:
+        re_motifs = re.compile(r'([A-Z]+)\(([0-9]+)-([0-9]+)\)').findall(motif_string[2])
+    except IndexError as e:
+        sys.stderr.write(f'Error: Cannot parse {motif_string} - {e}\n')
+        raise
     minpos = None
     maxpos = None
     motifs = []
