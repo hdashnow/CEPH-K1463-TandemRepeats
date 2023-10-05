@@ -36,6 +36,30 @@ def extractfasta(bed: pathlib.Path, fasta: pathlib.Path, maxout: int = 10000):
                 continue
             yield (locus[0], locus[1], locus[2]), [sequence]
 
+def parsetrsolve(motif_string: str):
+    """
+    Parse the output of tr-solve version 0.2.1+
+    Parse the motifs and their start/end positions
+    e.g. 'CAG_0_18,A_18_38' -> ['CAG', 'A'], [0, 38]
+    
+    >>> parsetrsolve('AGAGGCGCGGCGCGCCGGCGCAGGCGCAG_0_597')
+    ('AGAGGCGCGGCGCGCCGGCGCAGGCGCAG', 0, 597)
+    >>> parsetrsolve('CAG_0_18')
+    ('CAG', 0, 18)
+    >>> parsetrsolve('A_18_38')
+    ('A', 18, 38)
+    """
+
+    motif, start, end = motif_string.split('_')
+        # except ValueError as e:
+        #     sys.stderr.write(f'Error: Cannot parse {motif_list} - {e}\n')
+        #     raise
+    assert 'N' not in motif, f'N found in motif: {motif}'
+    start = int(start)
+    end = int(end)
+
+    return motif, start, end
+
 def runtrsolve(sequence: str, trsolve: pathlib.Path):
     """
     Run tr-solve on a sequence by calling the binary.
@@ -47,14 +71,17 @@ def runtrsolve(sequence: str, trsolve: pathlib.Path):
     Return a list of TRGT motifs and the start/end of the left and rightmost motifs.
 
 
-    >>> runtrsolve('ATATATATATATATATATATATAT', trsolve='~/tools/tr-solve-v0.2.0-linux_x86_64')
+    >>> runtrsolve('ATATATATATATATATATATATAT', trsolve='~/tools/tr-solve-v0.2.1-linux_x86_64')
     (['AT'], [0, 24])
-    >>> runtrsolve('CAGCAGCAGCAGCAGCAGAAAAAAAAAAAAAAAAAAAA', trsolve='~/tools/tr-solve-v0.2.0-linux_x86_64')
+    >>> runtrsolve('CAGCAGCAGCAGCAGCAGAAAAAAAAAAAAAAAAAAAA', trsolve='~/tools/tr-solve-v0.2.1-linux_x86_64')
     (['CAG', 'A'], [0, 38])
-    >>> runtrsolve('GGCACGGCATATATATATATATATATATATAT', trsolve='~/tools/tr-solve-v0.2.0-linux_x86_64')
+    >>> runtrsolve('GGCACGGCATATATATATATATATATATATAT', trsolve='~/tools/tr-solve-v0.2.1-linux_x86_64')
     (['AT'], [8, 32])
     """
+    sequence = sequence.upper()
+    assert 'N' not in sequence, f'N found in sequence: {sequence}'
     command = f'echo {sequence} | {trsolve}'
+    #sys.stderr.write(f'Running: {command}\n')
     try:
         result = subprocess.run(command, shell=True, check=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -62,23 +89,18 @@ def runtrsolve(sequence: str, trsolve: pathlib.Path):
         sys.stderr.write(f'Error: {command}\n')
         sys.stderr.write(f'{e.stderr.decode("utf-8")}\n')
         return [], [None, None] #XXX: Should this be an error?
-    motif_string = result.stdout.decode('utf-8').strip().split('\t')
-
-    if len(motif_string) < 3: # No motif structure reported
+    
+    motif_string_list = result.stdout.decode('utf-8').strip().split('\t')
+    if len(motif_string_list) < 3: # No motif structure reported
         return [], [None, None]
     
-    # Parse the motifs and their start/end positions
-    # e.g. 'CAG(0-18),A(18-38)' -> ['CAG', 'A'], [0, 38]
-    try:
-        re_motifs = re.compile(r'([A-Z]+)\(([0-9]+)-([0-9]+)\)').findall(motif_string[2])
-    except IndexError as e:
-        sys.stderr.write(f'Error: Cannot parse {motif_string} - {e}\n')
-        raise
+    # Trim the positions to the bases covered by the motifs
     minpos = None
     maxpos = None
     motifs = []
-    for motif, start, end in re_motifs:
-        assert 'N' not in motif, f'N found in motif: {motif}'
+
+    for motif_string in motif_string_list[2].split(','):
+        motif, start, end = parsetrsolve(motif_string)
 
         motifs.append(motif)
         if minpos is None:
@@ -133,6 +155,7 @@ def main(infile: pathlib.Path, outfile: str = 'stdout', *,
     for (chrom, start_orig, end_orig), alts in sequences:
         for alt in alts:
             motifs, bounds = runtrsolve(alt, trsolve=trtools)
+            #sys.stderr.write(f'{motifs}\t{bounds}\n')
             
             if len(motifs) == 0:
                 if seqout:
