@@ -79,7 +79,11 @@ def runtrsolve(sequence: str, trsolve: pathlib.Path):
     (['AT'], [8, 32])
     """
     sequence = sequence.upper()
-    assert 'N' not in sequence, f'N found in sequence: {sequence}'
+    if 'N' in sequence:
+        sys.stderr.write(f'N found in sequence: {sequence}\n')
+        # Remove Ns from the sequence
+        sequence = re.sub('N', '', sequence)
+        sys.stderr.write(f'Removed Ns from sequence to produce: {sequence}\n')
     command = f'echo {sequence} | {trsolve}'
     #sys.stderr.write(f'Running: {command}\n')
     try:
@@ -127,7 +131,7 @@ def rmdup(seq):
 def main(infile: pathlib.Path, outfile: str = 'stdout', *, 
          fasta: pathlib.Path = None, minins: int = 8, maxout: int = 10000,
          trtools: pathlib.Path = pathlib.Path('tr-solve'),
-         seqout: bool = False):
+         seqout: bool = False, trim: bool = False):
     """
     Convert a VCF or BED file to TRGT repeat definitions.
     :param infile: Path to the input VCF or BED file.
@@ -137,6 +141,7 @@ def main(infile: pathlib.Path, outfile: str = 'stdout', *,
     :param maxout: Maximum region size to output (smaller ones skipped).
     :param trtools: Path to the tr-solve binary.
     :param seqout: Output all input sequences. When false, sequences with no motif found are skipped.
+    :param trim: Trim the output coordinates to the bases covered by the motifs.
     """
     if infile.suffix == '.vcf' or infile.suffixes[-2:] == ['.vcf', '.gz']:
         sequences = extractvcf(infile, minins=minins)
@@ -164,16 +169,18 @@ def main(infile: pathlib.Path, outfile: str = 'stdout', *,
             start = int(start_orig)
             end = int(end_orig)
 
-            # Trim the bounds to the bases covered by the motifs
-            if bounds[0] is not None:
-                start += bounds[0]
-            if bounds[1] is not None:
-                end = start + bounds[1] - bounds[0]
+            if trim:
 
-            if start > int(end_orig):
-                start = int(end_orig)
-            if end < int(start_orig):
-                end = int(start_orig)
+                # Trim the bounds to the bases covered by the motifs
+                if bounds[0] is not None:
+                    start += bounds[0]
+                if bounds[1] is not None:
+                    end = start + bounds[1] - bounds[0]
+
+                if start > int(end_orig):
+                    start = int(end_orig)
+                if end < int(start_orig):
+                    end = int(start_orig)
 
             unique_motifs = dict.fromkeys(motifs) # can use set(motifs) if order doesn't matter. Assume it does for now
             motifs_str = ','.join(unique_motifs)
