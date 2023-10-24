@@ -56,7 +56,7 @@ def fix_overlaps(clusterbed, pct_overlap = 5):
     else:
         return best.copy()
 
-def merge_loci(clusterbed, id_suffix = ''):
+def merge_loci(clusterbed, id_suffix = '', maxmotifs = 5):
     """Join simple repeats into compound loci
     Non-repetitive sequence between them will be ignored.
     
@@ -68,8 +68,11 @@ def merge_loci(clusterbed, id_suffix = ''):
     # Check that none overlap?
     # Check sorted?
     
+    if clusterbed.shape[0] > maxmotifs:
+        widths = clusterbed['end'] - clusterbed['start']
+        clusterbed = clusterbed.loc[widths.nlargest(maxmotifs).index.sort_values()]
+
     motifs = clusterbed['sequence']
-    
     uniq_motifs = ','.join(list(dict.fromkeys(motifs))) # Requires Python 3.7+ to maintain ordering
     struc = ''.join([f'({x})n'.format() for x in motifs])
 
@@ -89,7 +92,7 @@ out_filepath = 'chm13v2.0_maskedY_rCRS.T2T-CHM13v2.0.UCSC.SimpleRepeats.trsolve.
 fastafile = '/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/ref/T2T/chm13v2.0_maskedY_rCRS.fa.gz'
 trsolve = '~/tools/tr-solve-v0.3.0-linux_x86_64'
 
-max_cluster_len = 20000 # Exclude clusters of loci > than this many bp
+max_cluster_len = 10000 # Exclude clusters of loci > than this many bp
 join_dist = 50 # If loci are within this many bp, join them into a compound locus (no interruption kept currently)
 
 if fastafile is None:
