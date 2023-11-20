@@ -158,12 +158,10 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
         mom, dad = vs[:2]
         if mom.CHROM in exclude_chroms: continue
         if not (mom.POS == dad.POS and mom.CHROM == dad.CHROM and mom.REF == dad.REF):
-            sys.stderr.write(f'Warning: postition mismatch: {mom.CHROM,mom.POS,dad.CHROM,dad.POS}\n'.format())
-            continue
+            sys.stderr.write(f'Warning: Parent postition mismatch. Mom: {mom.CHROM} {mom.POS}, Dad: {dad.CHROM} {dad.POS}\n'.format())
         for i, kid in enumerate(vs[2:]):
-            if mom.POS not in (76534727, 76534728):
-                assert (mom.POS == kid.POS) and mom.CHROM == kid.CHROM \
-                    and mom.REF == kid.REF, (mom.POS, kid.POS, mom.REF, kid.REF)
+            if not (mom.POS == kid.POS and mom.CHROM == kid.CHROM and kid.REF == kid.REF):
+                sys.stderr.write(f'Warning: Kid postition mismatch. Parents: {mom.CHROM} {mom.POS}, Kid: {kid.CHROM} {kid.POS}\n'.format())
             try:
                 d, parental_ht = find_distance(mom, dad, kid, power, dist_tags)
             except ValueError:
