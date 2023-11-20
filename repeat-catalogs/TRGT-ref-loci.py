@@ -87,9 +87,12 @@ def merge_loci(clusterbed, id_suffix = '', maxmotifs = 5):
 
 
 # Settings
-in_filepath = 'data/T2T-CHM13v2.0.UCSC.SimpleRepeats.tsv.gz'
-out_filepath = 'chm13v2.0_maskedY_rCRS.T2T-CHM13v2.0.UCSC.SimpleRepeats.trsolve.trgt.bed'
-fastafile = '/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/ref/T2T/chm13v2.0_maskedY_rCRS.fa.gz'
+#in_filepath = 'data/T2T-CHM13v2.0.UCSC.SimpleRepeats.tsv.gz'
+#out_filepath = 'chm13v2.0_maskedY_rCRS.T2T-CHM13v2.0.UCSC.SimpleRepeats.trsolve.trgt.bed'
+#fastafile = '/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/ref/T2T/chm13v2.0_maskedY_rCRS.fa.gz'
+in_filepath = 'data/GRCh38.UCSC.SimpleRepeats.tsv.gz'
+out_filepath = 'human_GRCh38_no_alt_analysis_set.UCSC.SimpleRepeats.trsolve.trgt.bed'
+fastafile = '/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/ref/hg38/human_GRCh38_no_alt_analysis_set.fasta'
 trsolve = '~/tools/tr-solve-v0.3.0-linux_x86_64'
 
 max_cluster_len = 10000 # Exclude clusters of loci > than this many bp
