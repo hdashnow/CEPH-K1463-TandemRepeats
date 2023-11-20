@@ -32,8 +32,9 @@ def get_norm_tag(v: cyvcf2.Variant, tag: str) -> ty.List[int]:
         factors = [len(x) for x in motifs]
     if tag == 'AP':
         factors = get_tag(v, 'AL')
-    
+
     vals = get_tag(v, tag)
+
     for i in vals:
         if type(i) != str:
             if i < 0:
@@ -110,6 +111,8 @@ def vmc_fmt(variant: cyvcf2.Variant, tag: str) -> str:
     """
     Return the tag format field as a string.
     """
+    if tag == 'ALLR' or tag == 'MS':
+        return variant.format(tag)[0]
     try:
         t = get_norm_tag(variant, tag)
     except ValueError:
