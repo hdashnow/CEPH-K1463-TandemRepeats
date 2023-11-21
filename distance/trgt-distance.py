@@ -158,14 +158,14 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
         mom, dad = vs[:2]
         if mom.CHROM in exclude_chroms: continue
         if not (mom.INFO.get('TRID') == dad.INFO.get('TRID')):
-            sys.stderr.write(f'Warning: Skipped locus due to parent TRID mismatch. Mom: {mom.INFO.get("TRID")}, Dad: {dad.INFO.get("TRID")}\n'.format())
-            continue
+            sys.stderr.write(f'Error: TRID mismatch. Mom: {mom.INFO.get("TRID")}, Dad: {dad.INFO.get("TRID")}\n'.format())
+            sys.exit(f'Error: TRID mismatch. Expected same TRID in the same order in all files. Are these VCFs sorted, complete and from the same TRGT definition file?')
         if not (mom.POS == dad.POS and mom.CHROM == dad.CHROM and mom.REF == dad.REF):
             sys.stderr.write(f'Warning: Parent postition mismatch. Mom: {mom.CHROM} {mom.POS}, Dad: {dad.CHROM} {dad.POS}\n'.format())
         for i, kid in enumerate(vs[2:]):
             if not (mom.INFO.get('TRID') == kid.INFO.get('TRID')):
-                sys.stderr.write(f'Warning: Skipped kid {kid_ids[i]} at this locus due to kid TRID mismatch. Parents: {mom.INFO.get("TRID")}, Kid: {kid.INFO.get("TRID")}\n'.format())
-                continue
+                sys.stderr.write(f'Error: kid {kid_ids[i]} has a TRID mismatch. Parents: {mom.INFO.get("TRID")}, Kid: {kid.INFO.get("TRID")}\n'.format())
+                sys.exit(f'Error: TRID mismatch. Expected same TRID in the same order in all files. Are these VCFs sorted, complete and from the same TRGT definition file?')
             if not (mom.POS == kid.POS and mom.CHROM == kid.CHROM and kid.REF == kid.REF):
                 sys.stderr.write(f'Warning: Kid postition mismatch. Parents: {mom.CHROM} {mom.POS}, Kid: {kid.CHROM} {kid.POS}\n'.format())
             try:
