@@ -7,8 +7,7 @@ import io
 import pandas as pd
 import bioframe as bf
 import matplotlib.pyplot as plt
-import numpy as np
-import math
+#import numpy as np
 import pysam
 import sys
 from trsolve import runtrsolve, rmdup
@@ -84,98 +83,157 @@ def merge_loci(clusterbed, id_suffix = '', maxmotifs = 5):
     outline = f'{chrom}\t{start}\t{end}\tID={loc_id}{id_suffix};MOTIFS={uniq_motifs};STRUC={struc}'.format()
     return outline
 
+def main(repeats: str, fasta: str, output: str, *, replace: str = None, trsolve: str = 'tr-solve',
+         max_cluster_len: int = 10000, join_dist: int = 50, exclude_ends: int = 250):
+    """
+    :param repeats: UCSC TRF SimpleRepeats file (tsv)
+    :param output: Output file name
+    :param fasta: Reference genome fasta file
+    :param replace: TRGT file containing manually curated loci to replace overlapping loci with
+    :param trsolve: Path to tr-solve executable
+    :param max_cluster_len: Exclude clusters of loci > than this many bp
+    :param join_dist: If loci are within this many bp, join them into a compound locus (no interruption kept currently)
+    :param exclude_ends: Exclude loci within this many bp of the chromosome ends
+    """
+    # Clarify variable names
+    in_filepath = repeats
+    out_filepath = output
 
 
-# Settings
-#in_filepath = 'data/T2T-CHM13v2.0.UCSC.SimpleRepeats.tsv.gz'
-#out_filepath = 'chm13v2.0_maskedY_rCRS.T2T-CHM13v2.0.UCSC.SimpleRepeats.trsolve.trgt.bed'
-#fastafile = '/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/ref/T2T/chm13v2.0_maskedY_rCRS.fa.gz'
-in_filepath = 'data/GRCh38.UCSC.SimpleRepeats.tsv.gz'
-out_filepath = 'human_GRCh38_no_alt_analysis_set.UCSC.SimpleRepeats.trsolve.trgt.bed'
-fastafile = '/scratch/ucgd/lustre-work/quinlan/data-shared/datasets/Palladium/ref/hg38/human_GRCh38_no_alt_analysis_set.fasta'
-trsolve = '~/tools/tr-solve-v0.3.0-linux_x86_64'
+    if fasta is None:
+        raise ValueError('BED input requires FASTA file')
+    else:
+        ref = pysam.FastaFile(fasta)
 
-max_cluster_len = 10000 # Exclude clusters of loci > than this many bp
-join_dist = 50 # If loci are within this many bp, join them into a compound locus (no interruption kept currently)
+    chrom_lengths = {k: v for k, v in zip(ref.references, ref.lengths)}
 
-if fastafile is None:
-    raise ValueError('BED input requires FASTA file')
-else:
-    ref = pysam.FastaFile(fastafile)
+    # Read replacement loci
+    if replace:
+        replacebed = pd.read_table(replace, header=None, 
+                                   names=['chrom', 'start', 'end', 'definition'])
+        sys.stderr.write(f'Read {len(replacebed)} replacement loci\n')
 
-# Read input UCSC SimpleRepeats file as a bed
-if is_gzip(in_filepath):
-    bed_file = io.TextIOWrapper(gzip.open(in_filepath, 'rb'), encoding='utf-8')
-else:
-    bed_file = open(in_filepath)
-        
-bed = pd.read_table(bed_file)
-#bed.drop(columns='#bin', inplace=True)
-bed.rename(columns = {'#chrom':'chrom', 'chromStart':'start', 'chromEnd': 'end'}, inplace=True)
-assert bf.core.checks.is_bedframe(bed)
-
-print('Rows in bed: ', len(bed))
-
-bedclusters = bf.cluster(bed, min_dist=join_dist)
-print('Number of clusters:', len(bedclusters['cluster'].unique()))
-bedclusters.head()
-
-n_big = 0
-n_TRF = 0
-n_trsolve = 0
-
-with open(out_filepath, 'w') as outfile:
-
-    for cluster in bedclusters['cluster'].unique():
-        clusterbed = bedclusters.loc[bedclusters['cluster'] == cluster]
-
-        chrom = clusterbed.iloc[0]['chrom']
-        start = clusterbed.iloc[0]['cluster_start']
-        end = clusterbed.iloc[0]['cluster_end']
-        
-        if end - start > max_cluster_len:
-            n_big += 1
-            print('Skipping cluster of length ', end - start)
-            continue
-
-        try:
-            sequence = ref.fetch(chrom, start, end)
-        except KeyError as e:
-            sys.stderr.write(f'Error: {e}\n')
-            continue
-  
-        # Run tr-solve
-        try:
-            motifs, bounds = runtrsolve(sequence, trsolve=trsolve)
-        except OSError as e:
-            sys.stderr.write(f'Skipping region {chrom}:{start}-{end} of length {end - start} due to error: {e}\n')
-            n_big += 1
-            continue
-
-        if len(motifs) > 0:
-            unique_motifs = dict.fromkeys(motifs) # can use set(motifs) if order doesn't matter. Assume it does for now
-            motifs_str = ','.join(unique_motifs)
-            struc = ''.join([f'({motif})n' for motif in rmdup(motifs)])
-            trgt_def = f'{chrom}\t{start}\t{end}\tID={chrom}_{start}_{end}_trsolve;MOTIFS={motifs_str};STRUC={struc}'
-            n_trsolve += 1
-
-        else:
-            # No motifs found, use TRF
-            #if len(clusterbed) == 1:
-                # Single motif, no need to fix
-            trgt_def = merge_loci(clusterbed, id_suffix = '_TRF')
-            n_TRF += 1
+    # Read input UCSC SimpleRepeats file as a bed
+    if is_gzip(in_filepath):
+        bed_file = io.TextIOWrapper(gzip.open(in_filepath, 'rb'), encoding='utf-8')
+    else:
+        bed_file = open(in_filepath)
             
-        # Write in TRGT format
-        outfile.write(trgt_def + '\n')
+    bed = pd.read_table(bed_file)
+    if '#bin' in bed.columns:
+        bed.drop(columns='#bin', inplace=True)
+    if '#chrom' in bed.columns:
+        bed.rename(columns={'#chrom':'chrom'}, inplace=True)
+    bed.rename(columns={'chromStart':'start', 'chromEnd': 'end'}, inplace=True)
+    assert bf.core.checks.is_bedframe(bed)
 
-print('skipped due to size: ', n_big)
-print('This many loci were solved by tr-solve: ', n_trsolve)
-print('This many loci were solved by TRF: ', n_TRF)
+    sys.stderr.write(f'Rows in bed: {len(bed)}\n')
 
+    bedclusters = bf.cluster(bed, min_dist=join_dist)
+    sys.stderr.write(f'Rows in bedclusters: {len(bedclusters)}\n')
+    bedclusters.head()
 
+    n_big = 0
+    n_TRF = 0
+    n_trsolve = 0
 
-#XXX TODO
-# If any cluster overlap a known pathogenic locus, replace them with the manually curated pathogenic locus
+    with open(out_filepath, 'w') as outfile:
 
+        position_last = 0
+        for cluster in bedclusters['cluster'].unique():
+            keep_cluster = True
+            clusterbed = bedclusters.loc[bedclusters['cluster'] == cluster]
 
+            chrom = clusterbed.iloc[0]['chrom']
+            start = clusterbed.iloc[0]['cluster_start']
+            end = clusterbed.iloc[0]['cluster_end']
+
+            if replace:
+                if chrom in replacebed['chrom'].values:
+                   
+                    for _, row in replacebed[replacebed['chrom'] == chrom].iterrows():
+                         # Check if any replacement loci are before the current cluster start
+                        # if row['end'] < start and row['start'] > position_last:
+                        #     outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
+                        #     sys.stderr.write(f'Adding additional locus not in ref annotation {row["definition"]}\n')
+                        #     replacebed.drop(row.name, inplace=True)
+
+                        # Check for overlap
+                        if row['start'] < end and row['end'] > start:
+                            sys.stderr.write(f'Overlapping replacement loci found for {chrom}:{start}-{end}\n')
+                            sys.stderr.write(f'Replacing it with {row["definition"]}\n')
+                            outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
+                            # Remove the locus from replacebed so it doesn't get written again
+                            replacebed.drop(row.name, inplace=True)
+                            keep_cluster = False
+                    
+                    # overlap = bf.overlap(replacebed, clusterbed, how='inner')
+                    # if len(overlap) > 0:
+                    #     sys.stderr.write(f'Overlapping replacement loci found for {chrom}:{start}-{end}\n')
+                    #     sys.stderr.write(f'Replacing it with {overlap.iloc[0]["definition"]}\n')
+                    #     for _, row in overlap.iterrows():
+                    #         outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
+                    #         # Remove the locus from replacebed so it doesn't get written again
+                    #         replacebed.drop(row.name, inplace=True)
+                    #     continue #go to next cluster
+
+            if keep_cluster:
+                if start < exclude_ends or end > chrom_lengths[chrom] - exclude_ends:
+                    sys.stderr.write(f'Skipping cluster at {chrom}:{start}-{end} due to proximity to chromosome end\n')
+                    continue
+                
+                if end - start > max_cluster_len:
+                    n_big += 1
+                    sys.stderr.write(f'Skipping cluster of length {end - start}\n')
+                    continue
+
+                try:
+                    sequence = ref.fetch(chrom, start, end)
+                except KeyError as e:
+                    sys.stderr.write(f'Error: {e}\n')
+                    continue
+        
+                # Run tr-solve
+                try:
+                    motifs, bounds = runtrsolve(sequence, trsolve=trsolve)
+                except OSError as e:
+                    sys.stderr.write(f'Skipping region {chrom}:{start}-{end} of length {end - start} due to error: {e}\n')
+                    n_big += 1
+                    continue
+
+                if len(motifs) > 0:
+                    unique_motifs = dict.fromkeys(motifs) # can use set(motifs) if order doesn't matter. Assume it does for now
+                    motifs_str = ','.join(unique_motifs)
+                    struc = ''.join([f'({motif})n' for motif in rmdup(motifs)])
+                    trgt_def = f'{chrom}\t{start}\t{end}\tID={chrom}_{start}_{end}_trsolve;MOTIFS={motifs_str};STRUC={struc}'
+                    n_trsolve += 1
+
+                else:
+                    # No motifs found, use TRF
+                    #if len(clusterbed) == 1:
+                        # Single motif, no need to fix
+                    trgt_def = merge_loci(clusterbed, id_suffix = '_TRF')
+                    n_TRF += 1
+                    
+                # Write in TRGT format
+                outfile.write(trgt_def + '\n')
+
+            # Update position_last
+            position_last = end
+
+        # Write remaining replacement loci, if any
+        if replace:
+            if len(replacebed) > 0:
+                sys.stderr.write(f'{len(replacebed)} replacement loci being added to end of file\n')
+                for _, row in replacebed.iterrows():
+                    outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
+
+    sys.stderr.write(f'Skipped due to size: {n_big}\n')
+    sys.stderr.write(f'Solved by tr-solve: {n_trsolve}\n')
+    sys.stderr.write(f'Solved by TRF: {n_TRF}\n')
+
+if __name__ == "__main__":
+    #import doctest
+    #doctest.testmod()
+    import defopt
+    defopt.run(main)
