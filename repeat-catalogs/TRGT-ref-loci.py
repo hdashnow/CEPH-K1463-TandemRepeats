@@ -167,7 +167,7 @@ def main(repeats: str, fasta: str, output: str, *, replace: str = None, replace_
                             replacebed.drop(row.name, inplace=True)
                             keep_cluster = False
                     
-            if keep_cluster:
+            if keep_cluster and chrom in chrom_lengths: # Check if chrom is in reference genome
                 if start < exclude_ends or end > chrom_lengths[chrom] - exclude_ends:
                     sys.stderr.write(f'Skipping cluster at {chrom}:{start}-{end} due to proximity to chromosome end\n')
                     continue
