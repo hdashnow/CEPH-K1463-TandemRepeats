@@ -16,6 +16,10 @@ def is_gzip(file_path):
     with open(file_path, 'rb') as file:
         return file.read(2) == b'\x1f\x8b'
 
+def overlap(a, b):
+    if min(a[1], b[1]) - max(a[0], b[0]) > 0:
+        return True
+
 def fix_overlaps(clusterbed, pct_overlap = 5):
     
     if len(clusterbed) == 1:
@@ -83,13 +87,14 @@ def merge_loci(clusterbed, id_suffix = '', maxmotifs = 5):
     outline = f'{chrom}\t{start}\t{end}\tID={loc_id}{id_suffix};MOTIFS={uniq_motifs};STRUC={struc}'.format()
     return outline
 
-def main(repeats: str, fasta: str, output: str, *, replace: str = None, trsolve: str = 'tr-solve',
+def main(repeats: str, fasta: str, output: str, *, replace: str = None, replace_suffix: str = '_pathogenic', trsolve: str = 'tr-solve',
          max_cluster_len: int = 10000, join_dist: int = 50, exclude_ends: int = 250):
     """
     :param repeats: UCSC TRF SimpleRepeats file (tsv)
     :param output: Output file name
     :param fasta: Reference genome fasta file
     :param replace: TRGT file containing manually curated loci to replace overlapping loci with
+    :param replace_suffix: Annotate replacement loci IDs with this suffix
     :param trsolve: Path to tr-solve executable
     :param max_cluster_len: Exclude clusters of loci > than this many bp
     :param join_dist: If loci are within this many bp, join them into a compound locus (no interruption kept currently)
@@ -152,31 +157,16 @@ def main(repeats: str, fasta: str, output: str, *, replace: str = None, trsolve:
                 if chrom in replacebed['chrom'].values:
                    
                     for _, row in replacebed[replacebed['chrom'] == chrom].iterrows():
-                         # Check if any replacement loci are before the current cluster start
-                        # if row['end'] < start and row['start'] > position_last:
-                        #     outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
-                        #     sys.stderr.write(f'Adding additional locus not in ref annotation {row["definition"]}\n')
-                        #     replacebed.drop(row.name, inplace=True)
-
                         # Check for overlap
-                        if row['start'] < end and row['end'] > start:
+                        if overlap((row['start'], row['end']), (start, end)):
                             sys.stderr.write(f'Overlapping replacement loci found for {chrom}:{start}-{end}\n')
                             sys.stderr.write(f'Replacing it with {row["definition"]}\n')
-                            outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
+                            definition = row['definition'].replace(';MOTIFS=', replace_suffix + ';MOTIFS=')
+                            outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{definition}\n')
                             # Remove the locus from replacebed so it doesn't get written again
                             replacebed.drop(row.name, inplace=True)
                             keep_cluster = False
                     
-                    # overlap = bf.overlap(replacebed, clusterbed, how='inner')
-                    # if len(overlap) > 0:
-                    #     sys.stderr.write(f'Overlapping replacement loci found for {chrom}:{start}-{end}\n')
-                    #     sys.stderr.write(f'Replacing it with {overlap.iloc[0]["definition"]}\n')
-                    #     for _, row in overlap.iterrows():
-                    #         outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
-                    #         # Remove the locus from replacebed so it doesn't get written again
-                    #         replacebed.drop(row.name, inplace=True)
-                    #     continue #go to next cluster
-
             if keep_cluster:
                 if start < exclude_ends or end > chrom_lengths[chrom] - exclude_ends:
                     sys.stderr.write(f'Skipping cluster at {chrom}:{start}-{end} due to proximity to chromosome end\n')
@@ -210,8 +200,6 @@ def main(repeats: str, fasta: str, output: str, *, replace: str = None, trsolve:
 
                 else:
                     # No motifs found, use TRF
-                    #if len(clusterbed) == 1:
-                        # Single motif, no need to fix
                     trgt_def = merge_loci(clusterbed, id_suffix = '_TRF')
                     n_TRF += 1
                     
@@ -226,14 +214,13 @@ def main(repeats: str, fasta: str, output: str, *, replace: str = None, trsolve:
             if len(replacebed) > 0:
                 sys.stderr.write(f'{len(replacebed)} replacement loci being added to end of file\n')
                 for _, row in replacebed.iterrows():
-                    outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{row["definition"]}\n')
+                    definition = row['definition'].replace(';MOTIFS=', replace_suffix + ';MOTIFS=')
+                    outfile.write(f'{row["chrom"]}\t{row["start"]}\t{row["end"]}\t{definition}\n')
 
     sys.stderr.write(f'Skipped due to size: {n_big}\n')
     sys.stderr.write(f'Solved by tr-solve: {n_trsolve}\n')
     sys.stderr.write(f'Solved by TRF: {n_TRF}\n')
 
 if __name__ == "__main__":
-    #import doctest
-    #doctest.testmod()
     import defopt
     defopt.run(main)
