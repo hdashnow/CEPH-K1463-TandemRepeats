@@ -7,34 +7,13 @@ import subprocess
 import re
 import pysam
 from itertools import groupby
+from TRlib import extractfasta
 
 def extractvcf(infile: pathlib.Path, minins: int = 8):
     cyvcf2_vcf = cyvcf2.VCF(infile)
     for locus in cyvcf2_vcf:
         if locus.INFO['SVTYPE'] == 'INS' and locus.INFO['SVLEN'] >= minins:
             yield (locus.CHROM, locus.POS, locus.POS), locus.ALT
-
-def extractfasta(bed: pathlib.Path, fasta: pathlib.Path, maxout: int = 10000):
-    """
-    Extract sequences from a FASTA file using a BED file.
-    :param bed: Path to the BED file.
-    :param fasta: Path to the FASTA file.
-    :return: DNA sequence as a string.
-    """
-    # read fasta file
-    ref = pysam.FastaFile(fasta)
-
-    with open(bed) as f:
-        for line in f:
-            locus = line.strip().split()
-            if int(locus[2]) - int(locus[1]) > maxout:
-                continue
-            try:
-                sequence = ref.fetch(locus[0], int(locus[1]), int(locus[2]))
-            except KeyError as e:
-                sys.stderr.write(f'Error: {e}\n')
-                continue
-            yield (locus[0], locus[1], locus[2]), [sequence]
 
 def parsetrsolve(motif_string: str):
     """
