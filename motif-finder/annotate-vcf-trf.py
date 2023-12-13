@@ -1,4 +1,4 @@
-# Annotate the repeat motif structure of ref and alts in a VCF using Tandem Repeats Finder
+# Annotate the repeat motif structure of ref and/or alts in a VCF using Tandem Repeats Finder
 # Calls out to https://github.com/lh3/TRF-mod/tree/dev
 
 import subprocess
@@ -10,15 +10,19 @@ import time
 import numpy as np
 start_time = time.time()
 
-def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
+def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod',
+         min:int = 50, max:int = 5000, ref: bool = False):
     """
-    Takes a TRGT VCF file and runs Tandem Repeats Finder (via TRF-mod fork @lh3)
-    on all REF and ALT sequences. For each repeat found it reports if it matches
-    the expected TRGT motif.
+    Takes a VCF file and runs Tandem Repeats Finder (via TRF-mod fork @lh3)
+    on the REF and/or ALT sequences for each locus.
+    For each repeat found it reports key statistics and the repeat motif.
 
     :param vcf: Path to the input VCF file.
     :param output: Prefix for output files, including temporary fasta. Make sure it's unique.
     :param trfmod: Path to the trf-mod executableble if it's not in the PATH.
+    :param min: Minimum indel size to report (positive for insertions, negative for deletions)
+    :param max: Maximum indel size to report (positive for insertions, negative for deletions)
+    :param ref: Report the repeat structure of the reference allele.
     """
     vcfreader = cyvcf2.VCF(vcf)
 
@@ -26,9 +30,15 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
     fastafile = f'{output}.fasta'
     with open(fastafile, 'w') as fasta:
         for vcf_line in vcfreader:
-            locid = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS])
-            for label, seq in zip(['REF'] + [f'ALT.{i}' for i in range(len(vcf_line.ALT))], [vcf_line.REF] + vcf_line.ALT):
-                fasta.write(f'>{locid}-{label}\n{seq}\n')
+            if vcf_line.ID is not None:
+                locid = vcf_line.ID
+            else:
+                locid = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS])
+            if ref and len(vcf_line.REF) >= min and len(vcf_line.REF) <= max:
+                fasta.write(f'>{locid}_REF\n{vcf_line.REF}\n')
+            for label, seq in zip([f'ALT.{i}' for i in range(len(vcf_line.ALT))], vcf_line.ALT):
+                if len(seq) >= min and len(seq) <= max:
+                    fasta.write(f'>{locid}_{label}\n{seq}\n')
 
     # Run TRF-mod on the fasta file and save in an iterator
     trfmod_lines = run_trf(trfmod, fastafile)
@@ -41,9 +51,8 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
     # Iterate through the VCF and the TRF-mod output in parallel. Need to keep track of 
     # the current locus as there are multiple lines per locus in the TRF-mod output
     trf_cols = ['TRFstart', 'TRFend', 'TRFperiod', 'TRFcopyNum', 'TRFfracMatch', 'VCFid', 'TRFmotif']
-    vcf_cols1 = ['CHROM', 'POS', 'TRGTmc']
-    vcf_cols2 = ['TRGTmotif', 'TRGTstruc']
-    header =  vcf_cols1 + [ 'allele_type', 'match'] + trf_cols + vcf_cols2
+    vcf_cols1 = ['CHROM', 'POS', 'reflen', 'altlen']
+    header =  vcf_cols1 + [ 'allele_type'] + trf_cols 
     with open(f'{output}.tsv', 'w') as outfh:
         outfh.write('#' + '\t'.join(header) + '\n')
 
@@ -54,47 +63,47 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
 
         while True:
             # Parse the VCF line
+            if vcf_line.ID is not None:
+                vcfID = vcf_line.ID
+            else:
+                vcfID = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS])
             vcf_locus = GenomicPos.from_cyvcf(vcf_line)
             # Parse the TRF-mod line
             # if len(trf_line) == 0:
             #     continue
             trfmod_fields = trf_line.split()
             trfmod_dict = dict(zip(trfmod_header, trfmod_fields))
+            trfmodID = trfmod_dict['VCFid'].split('_')[0]
             trfmod_locus = GenomicPos.from_chrom_pos(trfmod_dict['VCFid'].split('-')[0],
                                                      int(trfmod_dict['VCFid'].split('-')[1]))
             
             # If they match, write the output
-            if trfmod_locus == vcf_locus:
+            if trfmodID == vcfID:
                 # What type of allele is this?
-                trfmod_allele = trfmod_dict['VCFid'].split('-')[2]
-                vcf_motifs = vcf_line.INFO.get('MOTIFS')
-
-                if vcf_motifs == trfmod_dict['TRFmotif']:
-                    match = True
-                else:
-                    match = False
+                trfmod_allele = trfmod_dict['VCFid'].split('_')[1]
 
                 if trfmod_allele.startswith('ALT'):
                     allele_type = 'ALT'
                     allele_pos = int(trfmod_allele.lstrip('ALT.'))
-                    mc = int(vcf_line.format('MC')[0].split(',')[allele_pos])
+                    altlen = len(vcf_line.ALT[allele_pos])
 
                 elif trfmod_allele == 'REF':
                     allele_type = 'REF'
-                    mc = None
-                    match = None
+                    altlen = None
+
+                else:
+                    raise ValueError(f'Unknown allele type: {trfmod_allele}')
 
                 # Write output as a tab-separated file
                 outfh.write('\t'.join([ str(x) for x in
-                    [vcf_line.CHROM, vcf_line.POS, mc] +
-                    [allele_type, match] +
-                    [trfmod_dict[field] for field in trf_cols] +
-                    [vcf_motifs, vcf_line.INFO.get('STRUC')]
-
+                    [vcf_line.CHROM, vcf_line.POS, len(vcf_line.REF)] +
+                    [altlen, allele_type] +
+                    [trfmod_dict[field] for field in trf_cols]
                 ]) + '\n')
 
                 try:
                     trf_line = next(trfmod_lines)
+                    vcf_line = next(vcfreader)
                     continue
 
                 except StopIteration:
@@ -116,7 +125,7 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod'):
                     except StopIteration:
                         break
                 # If the TRF-mod locus is the same as the VCF locus, read both
-                elif trfmod_locus == vcf_locus:
+                elif trfmod_locus > vcf_locus:
                     try:
                         trf_line = next(trfmod_lines)
                         vcf_line = next(vcfreader)
