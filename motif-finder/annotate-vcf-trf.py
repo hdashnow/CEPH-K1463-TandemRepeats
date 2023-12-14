@@ -11,11 +11,12 @@ import numpy as np
 start_time = time.time()
 
 def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod',
-         min:int = 50, max:int = 5000, ref: bool = False):
+         min:int = 25, max:int = 5000, ref: bool = False):
     """
     Takes a VCF file and runs Tandem Repeats Finder (via TRF-mod fork @lh3)
     on the REF and/or ALT sequences for each locus.
     For each repeat found it reports key statistics and the repeat motif.
+    Note, with default settings minimum repeat called by TRF is 25 bp
 
     :param vcf: Path to the input VCF file.
     :param output: Prefix for output files, including temporary fasta. Make sure it's unique.
@@ -30,15 +31,16 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod',
     fastafile = f'{output}.fasta'
     with open(fastafile, 'w') as fasta:
         for vcf_line in vcfreader:
-            if vcf_line.ID is not None:
-                locid = vcf_line.ID
-            else:
-                locid = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS])
+
+            info_string = format_vcf_info(vcf_line)
+            
             if ref and len(vcf_line.REF) >= min and len(vcf_line.REF) <= max:
-                fasta.write(f'>{locid}_REF\n{vcf_line.REF}\n')
+                header = f'{info_string};allele=REF'
+                fasta.write(f'>{header}\n{vcf_line.REF}\n')
             for label, seq in zip([f'ALT.{i}' for i in range(len(vcf_line.ALT))], vcf_line.ALT):
                 if len(seq) >= min and len(seq) <= max:
-                    fasta.write(f'>{locid}_{label}\n{seq}\n')
+                    header = f'{info_string};allele={label}'
+                    fasta.write(f'>{header}\n{seq}\n')
 
     # Run TRF-mod on the fasta file and save in an iterator
     trfmod_lines = run_trf(trfmod, fastafile)
@@ -46,91 +48,95 @@ def main(vcf: pathlib.Path, output: str, trfmod: pathlib.Path = 'trf-mod',
     # Note, positions are relative to the start of the locus, not the chromosome
     trfmod_header = 'VCFid TRFstart TRFend TRFperiod TRFcopyNum TRFfracMatch TRFfracGap TRFscore TRFentroy TRFmotif'.split()
 
-
-    # Match up the TRF-mod output with the VCF
-    # Iterate through the VCF and the TRF-mod output in parallel. Need to keep track of 
-    # the current locus as there are multiple lines per locus in the TRF-mod output
+    # Iterate through the TRF-mod output
     trf_cols = ['TRFstart', 'TRFend', 'TRFperiod', 'TRFcopyNum', 'TRFfracMatch', 'VCFid', 'TRFmotif']
     vcf_cols1 = ['CHROM', 'POS', 'reflen', 'altlen']
     header =  vcf_cols1 + [ 'allele_type'] + trf_cols 
+
     with open(f'{output}.tsv', 'w') as outfh:
         outfh.write('#' + '\t'.join(header) + '\n')
 
-        vcfreader = cyvcf2.VCF(vcf)
-
-        vcf_line = next(vcfreader) # Read the first line of the VCF
-        trf_line = next(trfmod_lines) # Read the first line of the TRF-mod output
-
-        while True:
-            # Parse the VCF line
-            if vcf_line.ID is not None:
-                vcfID = vcf_line.ID
-            else:
-                vcfID = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS])
-            vcf_locus = GenomicPos.from_cyvcf(vcf_line)
+        for trf_line in trfmod_lines:
             # Parse the TRF-mod line
             # if len(trf_line) == 0:
             #     continue
             trfmod_fields = trf_line.split()
+            info_dict = parse_vcf_info(trfmod_fields[0].strip('>'))
+
             trfmod_dict = dict(zip(trfmod_header, trfmod_fields))
-            trfmodID = trfmod_dict['VCFid'].split('_')[0]
-            trfmod_locus = GenomicPos.from_chrom_pos(trfmod_dict['VCFid'].split('-')[0],
-                                                     int(trfmod_dict['VCFid'].split('-')[1]))
-            
-            # If they match, write the output
-            if trfmodID == vcfID:
-                # What type of allele is this?
-                trfmod_allele = trfmod_dict['VCFid'].split('_')[1]
+            trfmod_dict['VCFid'] = info_dict['ID']
 
-                if trfmod_allele.startswith('ALT'):
-                    allele_type = 'ALT'
-                    allele_pos = int(trfmod_allele.lstrip('ALT.'))
-                    altlen = len(vcf_line.ALT[allele_pos])
+            # What type of allele is this?
+            trfmod_allele = info_dict['allele']
 
-                elif trfmod_allele == 'REF':
-                    allele_type = 'REF'
-                    altlen = None
+            if trfmod_allele.startswith('ALT'):
+                allele_type = 'ALT'
+                allele_pos = int(trfmod_allele.lstrip('ALT.'))
+                altlen = info_dict['altlens'][allele_pos]
 
-                else:
-                    raise ValueError(f'Unknown allele type: {trfmod_allele}')
-
-                # Write output as a tab-separated file
-                outfh.write('\t'.join([ str(x) for x in
-                    [vcf_line.CHROM, vcf_line.POS, len(vcf_line.REF)] +
-                    [altlen, allele_type] +
-                    [trfmod_dict[field] for field in trf_cols]
-                ]) + '\n')
-
-                try:
-                    trf_line = next(trfmod_lines)
-                    vcf_line = next(vcfreader)
-                    continue
-
-                except StopIteration:
-                    break
-
-            # Choose which file to read next
-            # If the TRF-mod locus is before the VCF locus, read the next TRF-mod line
-            if trfmod_locus < vcf_locus:
-                try:
-                    trf_line = next(trfmod_lines)
-                except StopIteration:
-                    break
+            elif trfmod_allele == 'REF':
+                allele_type = 'REF'
+                altlen = None
 
             else:
-                # If the TRF-mod locus is after the VCF locus, read the next VCF line
-                if trfmod_locus > vcf_locus:
-                    try:
-                        vcf_line = next(vcfreader)
-                    except StopIteration:
-                        break
-                # If the TRF-mod locus is the same as the VCF locus, read both
-                elif trfmod_locus > vcf_locus:
-                    try:
-                        trf_line = next(trfmod_lines)
-                        vcf_line = next(vcfreader)
-                    except StopIteration:
-                        break
+                raise ValueError(f'Unknown allele type: {trfmod_allele}')
+            
+            try:
+                vcf_chrom = info_dict['CHROM']
+                vcf_pos = info_dict['POS']
+                vcf_reflen = info_dict['reflen']
+            except KeyError:
+                print(info_dict)
+                raise
+
+            # Write output as a tab-separated file
+            outfh.write('\t'.join([ str(x) for x in
+                [vcf_chrom, vcf_pos, vcf_reflen] +
+                [altlen, allele_type] +
+                [trfmod_dict[field] for field in trf_cols]
+            ]) + '\n')
+
+def format_vcf_info(vcf_line: cyvcf2.Variant) -> str:
+    """
+    Format the VCF info field as a string to be written to the fasta header
+    format: key1=value1;key2=value2;...
+    e.g. CHROM=chr1;POS=10033;reflen=1;altlen=2;ID=chr1-10034-INS-1
+    """
+    chrom = vcf_line.CHROM
+    pos = vcf_line.POS
+    if vcf_line.ID is None:
+        locid = '-'.join(str(x) for x in [vcf_line.CHROM, vcf_line.POS]) # might need to be more specific
+    else:
+        locid = vcf_line.ID
+    if ';' in locid:
+        locid = locid.replace(';', ',')
+    if '=' in locid:
+        locid = locid.replace('=', ':')
+    reflen = len(vcf_line.REF)
+    altlens = ','.join([str(len(alt)) for alt in vcf_line.ALT])
+    outstring = f'CHROM={chrom};POS={pos};reflen={reflen};altlens={altlens};ID={locid}'
+    return outstring
+
+def parse_vcf_info(info_string: str) -> dict:
+    """
+    >>> parse_vcf_info('CHROM=chr1;POS=10033;reflen=1;altlens=2;ID=chr1-10034-INS-1')
+    {'CHROM': 'chr1', 'POS': 10033, 'reflen': 1, 'altlens': [2], 'ID': 'chr1-10034-INS-1'}
+    """
+    info_dict = dict()
+    for keyval in info_string.split(';'):
+        try:
+            key, val = keyval.split('=')
+        except ValueError:
+            print(info_string)
+            raise
+        if key == 'altlens':
+            val = [int(x) for x in val.split(',')]
+        info_dict[key] = val
+        if key == 'POS':
+            info_dict[key] = int(val)
+        if key == 'reflen':
+            info_dict[key] = int(val)
+    return info_dict
 
 def norm_chrom(chrom: str) -> str:
     """
