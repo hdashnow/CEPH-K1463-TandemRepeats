@@ -28,6 +28,10 @@ def annotateFasta(trgt_definitions: str, fasta: str):
 
 def main(trgt_definitions: str, fasta: str, *, output: str = 'stdout', bed_files: list[str] = None, bed_names: list[str] = None):
         """
+        Outputs a bed file with annotated TRGT definitions including length of longest homopolymer, 
+        GC content, number of motifs, min and max motif length, and motifs.
+        If annotation bed files are provided, number of bp overlap is reported.
+
         :param trgt_definitions: Path to the TRGT definitions bed file
         :param fasta: Path to the reference FASTA file
         :param bed_files: Paths to one or more bed files
