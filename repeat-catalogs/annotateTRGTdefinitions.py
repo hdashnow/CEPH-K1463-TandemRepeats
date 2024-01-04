@@ -14,7 +14,11 @@ def annotateFasta(trgt_definitions: str, fasta: str):
             motifslist = motifs.split(',')
             struc = info.split(';')[2].split('=')[1]
             longest_homopolymer = TRlib.longesthomopolymer(sequence)
+            if longest_homopolymer is None:
+                longest_homopolymer = 'NA'
             gc_content = TRlib.GCcontent(sequence)
+            if gc_content is None:
+                gc_content = 'NA'
             n_motifs = len(motifslist)
             min_motiflen = len(min(motifslist, key=len))
             max_motiflen = len(max(motifslist, key=len))

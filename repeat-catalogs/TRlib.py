@@ -40,13 +40,18 @@ def longesthomopolymer(sequence):
 
     >>> longesthomopolymer('ATTTTGGGGGCCCCC')
     5
-    >>> longesthomopolymer('')
-    0
     >>> longesthomopolymer('ATTTTGGGGGNNNNNNNCCCCC')
     5
     >>> longesthomopolymer('ATTNTTGGGNGGNNNNNNNCCCNCC')
     3
+    >>> longesthomopolymer('') is None
+    True
+    >>> longesthomopolymer('NNNNNNNNNNNNNN') is None
+    True
     """
+    # if sequence is all Ns, return None
+    if len(sequence) == sequence.count('N'):
+        return None
     maximum = count = 0
     for s in filter(None, re.split('N', sequence, flags=re.IGNORECASE)):
         current = ''
@@ -67,17 +72,21 @@ def GCcontent(sequence):
 
     >>> GCcontent('ATTTTGGGGGCCCCCATTTT')
     0.5
-    >>> GCcontent('')
-    0.0
     >>> GCcontent('ATTT')
     0.0
+    >>> GCcontent('ATTTTGGGGGNNNNNNNNNNNCCCCCATTTT')
+    0.5
     >>> GCcontent('GGGGCCC')
     1.0
+    >>> GCcontent('') is None
+    True
+    >>> GCcontent('NNNNNNNNNNN') is None
+    True
     """
-    if len(sequence) == 0:
-        return 0.0
+    if len(sequence) == sequence.count('N'):
+        return None
     sequence = sequence.upper()
-    return (sequence.count('G') + sequence.count('C')) / len(sequence)
+    return (sequence.count('G') + sequence.count('C')) / (len(sequence) - sequence.count('N'))
 
 if __name__ == "__main__":
     import doctest
