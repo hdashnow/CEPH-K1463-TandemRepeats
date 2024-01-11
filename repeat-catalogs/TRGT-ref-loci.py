@@ -129,7 +129,12 @@ def main(repeats: str, fasta: str, output: str, *, replace: str = None, replace_
         bed.drop(columns='#bin', inplace=True)
     if '#chrom' in bed.columns:
         bed.rename(columns={'#chrom':'chrom'}, inplace=True)
-    bed.rename(columns={'chromStart':'start', 'chromEnd': 'end'}, inplace=True)
+    if 'chromStart' in bed.columns:
+        bed.rename(columns={'chromStart':'start'}, inplace=True)
+    if 'chromEnd' in bed.columns:
+        bed.rename(columns={'chromEnd':'end'}, inplace=True)
+    if 'pattern' in bed.columns:
+        bed.rename(columns={'pattern':'sequence'}, inplace=True)
     assert bf.core.checks.is_bedframe(bed)
 
     sys.stderr.write(f'Rows in bed: {len(bed)}\n')
