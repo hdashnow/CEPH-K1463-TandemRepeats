@@ -3,6 +3,7 @@ import cyvcf2
 import pathlib
 import typing as ty
 import numpy as np
+import pandas as pd
 import plotly.express as px
 from itertools import cycle
 
@@ -77,7 +78,7 @@ def min_distance(mom_mc: ty.List[ty.List[int]], dad_mc: ty.List[ty.List[int]],
                 kid_mc: ty.List[int], power: int) -> ty.Tuple[int, ty.List[int]]:
     """
     >>> min_distance([[6021, 15812], [6032, 15805], [5828.002823531628, 15366.006873607635]], [[3874, 4398], [3886, 4408], [3730.9991244077682, 4270.000632762909]], [4398, 15808, 4408, 15805, 4270.000632762909, 15317.999767303467], power = 1)
-    (52.0071063041687, [15812, 4398, 15805, 4408, 15366.006873607635, 4270.000632762909])
+    (52.0071063041687, [15812, 4398, 15805, 4408, 15366.006873607635, 4270.000632762909], [15808, 4398, 15805, 4408, 15317.999767303467, 4270.000632762909], 'T')
     """
     parent_mcs = generate_combinations(mom_mc, dad_mc)
     dists = [(distance(parent_mc, kid_mc, power=power), parent_mc) for parent_mc in parent_mcs]
@@ -89,8 +90,24 @@ def min_distance(mom_mc: ty.List[ty.List[int]], dad_mc: ty.List[ty.List[int]],
     # flip order of dm (dad/mom) to match md (mom/dad)
     result_dm = (result_dm[0], flip(result_dm[1]))
 
-    result = min([result_md, result_dm], key=lambda x: x[0])
-    return result
+
+    dist_vals = [result_md[0], result_dm[0]]
+    min_index = dist_vals.index(min(dist_vals))
+    
+    # Order the kids alleles to match the closest parent
+    if min_index == 0:
+        kid_ht = kid_mc
+    elif min_index == 1:
+        kid_ht = flip(kid_mc)
+    
+    # If the distances are the same then we can't determine the closest parent for the kid's alleles
+    # This includes cases where the kid alleles are identical to each other
+    if result_md[0] == result_dm[0]:
+        kid_ht_ordered = 'F'
+    else:
+        kid_ht_ordered = 'T'
+
+    return min([result_md, result_dm], key=lambda x: x[0]) + (kid_ht, kid_ht_ordered)
 
 def find_distance(mom: cyvcf2.Variant, dad: cyvcf2.Variant, kid: cyvcf2.Variant,
                   power: int, tags: ty.List[str]) -> ty.Tuple[int, ty.List[int]]: #, ty.List[int]]:
@@ -151,7 +168,8 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
         + "\t" \
         + "\t".join(f"{x}_{tag}" for x in ["mom", "dad", "kid"] for tag in extra_tags) \
         + "\tmotifs" \
-        + "\tdist\tparent_ht"
+        + "\tdist\tparent_ht" \
+        + "\tkid_ht\tkid_ht_ordered"
     print(header, file=fh)
     dists = []
     for vs in zip(*vcfs):
@@ -169,10 +187,13 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
             if not (mom.POS == kid.POS and mom.CHROM == kid.CHROM and kid.REF == kid.REF):
                 sys.stderr.write(f'Warning: Kid postition mismatch. Parents: {mom.CHROM} {mom.POS}, Kid: {kid.CHROM} {kid.POS}\n'.format())
             try:
-                d, parental_ht = find_distance(mom, dad, kid, power, dist_tags)
+                d, parental_ht, kid_ht, kid_ht_ordered = find_distance(mom, dad, kid, power, dist_tags)
             except ValueError:
                 d = -1
                 parental_ht = [-1, -1]
+                kid_ht = [-1]
+                kid_ht_ordered = 'NA'
+            
             dists.append(d)
             motifs = kid.INFO.get('MOTIFS')
 
@@ -182,6 +203,7 @@ def main(mom_vcf: pathlib.Path, dad_vcf: pathlib.Path, kid_vcfs:
             line += "\t".join(f"{vmc_fmt(x, tag)}" for x in [mom, dad, kid] for tag in extra_tags)
             line += f"\t{motifs}"
             line += f"\t{d}\t{','.join(str(p) for p in parental_ht)}"
+            line += f"\t{','.join(str(p) for p in kid_ht)}\t{kid_ht_ordered}"
             print(line, file=fh)
 
     fig = px.histogram(x=dists)
