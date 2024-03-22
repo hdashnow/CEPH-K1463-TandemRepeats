@@ -73,9 +73,20 @@ def flip(arr):
     result[1::2] = arr[::2]
     return result
 
+def phase_alleles(result_dm: ty.Tuple[int, ty.List[int]], 
+                  result_md: ty.Tuple[int, ty.List[int]], 
+                  kid_mc: ty.List[int]) -> ty.Tuple[int, ty.List[int], ty.List[int], str]:
+    """
+    Determine the order of parental and kid alleles that minimizes number of 
+    mutations and then the distance. Return the distance, ordered alleles and
+    retport if the alleles were ordered (i.e. if they could be phased).
+
+    >>> phase_alleles([1, [1, 2]], [2, [2, 1]], [10, 15])
+    """
+    pass # TODO (also fix this test)
 
 def min_distance(mom_mc: ty.List[ty.List[int]], dad_mc: ty.List[ty.List[int]],
-                kid_mc: ty.List[int], power: int) -> ty.Tuple[int, ty.List[int]]:
+                kid_mc: ty.List[int], power: int) -> ty.Tuple[int, ty.List[int], ty.List[int], str]:
     """
     >>> min_distance([[6021, 15812], [6032, 15805], [5828.002823531628, 15366.006873607635]], [[3874, 4398], [3886, 4408], [3730.9991244077682, 4270.000632762909]], [4398, 15808, 4408, 15805, 4270.000632762909, 15317.999767303467], power = 1)
     (52.0071063041687, [15812, 4398, 15805, 4408, 15366.006873607635, 4270.000632762909], [15808, 4398, 15805, 4408, 15317.999767303467, 4270.000632762909], 'T')
