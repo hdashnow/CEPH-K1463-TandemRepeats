@@ -1,5 +1,6 @@
 import pandas as pd
 import glob
+import sys
 
 # # Find files ending with .gz using glob
 # sample_files = glob.glob('data/TRGTdn/*.gz')#[0:1]
@@ -44,7 +45,7 @@ def get_chunks(files):
             break
 
 def sum_depth(depths):
-    """Sum the depth for each allele"""
+    """Sum the depth for each allele. Or any other string of comma separated numbers."""
     return [sum(pd.to_numeric(x.split(','))) for x in depths]
 
 def min_depth(depths):
@@ -67,24 +68,20 @@ def min_allelic_depth(chunk):
           'per_allele_reads_mother',
           'per_allele_reads_child']].apply(min_depth, axis=0).min(axis=1)
 
-
-# Filter ideas from Tom S:
-# child_coverage: 31
-# denovo_coverage: 2
-
-# min allelic depth of 5 in trio
-# ratio of depths between parents?
-# allele ratio
-# child ratio
+def parent_overlap_coverage(chunk):
+    """Count the proportion of reads in the parents that support the denovo allele"""
+    parent_overlap_coverage = chunk[['father_overlap_coverage', 'mother_overlap_coverage']].apply(sum_depth, axis=0).sum(axis=1)
+    parent_coverage = chunk[['per_allele_reads_father', 'per_allele_reads_mother']].apply(sum_depth, axis=0).sum(axis=1)
+    return parent_overlap_coverage / parent_coverage
 
 min_depth_filtered = 0
 complex_filtered = 0
-def callable_loci(chunk, min_depth=10, min_allelic_depth=5):
+def callable_loci(chunk, min_depth=10, min_allelic_depth=15):
     """Filter the chunk to keep only the loci that pass the filters"""
     global min_depth_filtered
     global complex_filtered
     
-    min_depth_filtered += sum(chunk['min_depth'] < min_depth)
+    min_depth_filtered += sum(chunk['min_allelic_depth'] < min_allelic_depth)
     complex_filtered += sum(chunk['min_motiflen'] != chunk['max_motiflen'])
 
     #print(chunk[chunk['child_MC'].str.contains('_') == True])
@@ -95,7 +92,7 @@ def callable_loci(chunk, min_depth=10, min_allelic_depth=5):
     #print(f'Filtered out {complex_filtered} loci with complex motifs')
 
     keep_loci = (
-        (chunk['min_depth'] >= min_depth) &
+        #(chunk['min_depth'] >= min_depth) &
         (chunk['min_allelic_depth'] >= min_allelic_depth) &
         #(chunk['mother_dropout_prob'] < 0.005) &
         #(chunk['father_dropout_prob'] < 0.005) &
@@ -125,12 +122,13 @@ def identify_dnms(chunk):
     pd.options.mode.chained_assignment = 'warn'
     is_dnm = (
         (chunk['candidate_dnm'] == True) &
-        (chunk['denovo_coverage'] >= 2) &
-        (chunk['father_overlap_coverage'] == '0,0') &
-        (chunk['mother_overlap_coverage'] == '0,0') &
-        (chunk['allele_ratio'] >= 0.7) &
-        (chunk['child_ratio'] >= 0.25) &
-        (chunk['child_ratio'] <= 0.75)
+        (chunk['denovo_coverage'] >= 2) #&
+        # (chunk['father_overlap_coverage'] == '0,0') &
+        # (chunk['mother_overlap_coverage'] == '0,0') &
+        (chunk['parent_overlap_proportion'] <= 0.05) & # proportion of reads supporting the denovo across both parents
+        # (chunk['child_ratio'] >= 0.25) &
+        # (chunk['child_ratio'] <= 0.75) &
+        #(chunk['allele_ratio'] >= 0.5) # proportion of reads supporting that allele that support the denovo allele
         )
 
     return is_dnm
@@ -143,7 +141,7 @@ def count_dnms(chunk):
 
     return n_dnms, n_callable
 
-def main(outfile: str, samples: str,
+def main(outfile: str, outdnms: str, samples: str,
          TRids: str = '',
          annotations: str = '../repeat-catalogs/human_GRCh38_no_alt_analysis_set.palladium-v1.0.trgt.annotations.bed',
          ):
@@ -152,6 +150,7 @@ def main(outfile: str, samples: str,
 
     :param annotations: Path to the repeat annotation file.
     :param outfile: Path to the output file.
+    :param outdnms: Path to the output file containing all DNMs.
     :param samples: Path to the TRGTdn files (comma separated).
     :param TRids: file of TRids to include (one per line).
     """
@@ -174,11 +173,12 @@ def main(outfile: str, samples: str,
     sample_files = samples.split(',')
     chunk_generator = get_chunks(sample_files)
 
-    all_dnms = pd.DataFrame(columns=['Sample', 'DNMs', 'Callable'])
+    all_dnms = pd.DataFrame(columns=['Sample', 'DNMs', 'Callable', 'Group', 'Value'])
     #with open('out.txt', 'w') as outfile:
     #print('Sample\tDNMs\tCallable\tMotiflen\tDNMrate')
 
     all_dnms_list = []
+    all_dnms_loci_list = []
     for sample, chunk in chunk_generator:
 
         # Filter to only the TRids of interest
@@ -191,17 +191,22 @@ def main(outfile: str, samples: str,
 
         chunk['min_depth'] = min_depth_trio(chunk)
         chunk['min_allelic_depth'] = min_allelic_depth(chunk)
+        chunk['parent_overlap_proportion'] = parent_overlap_coverage(chunk)
         
         chunk = callable_loci(chunk)
 
         chunk['reflen'] = chunk['end'] - chunk['start']
+
+        # Save all the DNM rows
+        all_dnms_loci_list.append(chunk[identify_dnms(chunk)])
 
         for motiflen, group in chunk.groupby('min_motiflen'):
             dnms, callable = count_dnms(group)
             all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
                                                     'DNMs': dnms, 'Callable': callable,
                                                     'Group': 'motiflen', 'Value': motiflen,
-                                                    'DNMrate': dnms/callable}))
+                                                    #'DNMrate': dnms/callable
+                                                    }))
         
         for longest_homopolymer, group in chunk.groupby('longest_homopolymer'):
             dnms, callable = count_dnms(group)
@@ -209,7 +214,8 @@ def main(outfile: str, samples: str,
                                                     'DNMs': dnms, 'Callable': callable,
                                                     'Group': 'longest_homopolymer',
                                                     'Value': longest_homopolymer,
-                                                    'DNMrate': dnms/callable}))
+                                                    #'DNMrate': dnms/callable
+                                                    }))
         
         try:
             for reflen, group in chunk.groupby('reflen'):
@@ -217,9 +223,10 @@ def main(outfile: str, samples: str,
                 all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
                                                         'DNMs': dnms, 'Callable': callable,
                                                         'Group': 'reflen', 'Value': reflen,
-                                                        'DNMrate': dnms/callable}))
+                                                        #'DNMrate': dnms/callable
+                                                        }))
         except KeyError:
-            print(f'reflen not found in group code')
+            sys.stderr.write(f'reflen not found in group code\n')
         
         try:
             for gc_content, group in chunk.groupby('gc_content'):
@@ -227,19 +234,26 @@ def main(outfile: str, samples: str,
                 all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
                                                         'DNMs': dnms, 'Callable': callable,
                                                         'Group': 'gc_content', 'Value': gc_content,
-                                                        'DNMrate': dnms/callable}))
+                                                        #'DNMrate': dnms/callable
+                                                        }))
         except KeyError:
-            print(f'gc_content not found in group code')
+            sys.stderr.write(f'gc_content not found in group code\n')
         
-        # print(f'{sample}\t{dnms}\t{callable}\t{motiflen}\t{dnms/callable}')
-        # break
+
     all_dnms = pd.DataFrame(all_dnms_list)
+    # merge by sample and group
+    all_dnms = all_dnms.groupby(['Sample', 'Group', 'Value']).sum().reset_index()
+    all_dnms['DNMrate'] = all_dnms['DNMs']/all_dnms['Callable']
+
     all_dnms.to_csv(outfile, sep='\t', index=False)
+
+    all_dnms_loci = pd.concat(all_dnms_loci_list)
+    all_dnms_loci.to_csv(outdnms, sep='\t', index=False)
 
     global min_depth_filtered
     global complex_filtered
-    print(f'Filtered out {min_depth_filtered} loci with depth < 10')
-    print(f'Filtered out {complex_filtered} loci with complex motifs')
+    sys.stderr.write(f'Filtered out {min_depth_filtered} loci with insufficient depth\n')
+    sys.stderr.write(f'Filtered out {complex_filtered} loci with complex motifs\n')
 
 if __name__ == "__main__":
     # import doctest
