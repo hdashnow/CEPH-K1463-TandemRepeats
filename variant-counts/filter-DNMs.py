@@ -5,11 +5,19 @@ import glob
 # sample_files = glob.glob('data/TRGTdn/*.gz')#[0:1]
 # print(sample_files)
 
-usecols = ['trid', 'denovo_coverage','per_allele_reads_father', 'per_allele_reads_mother', 'per_allele_reads_child', 'index', 'father_motif_counts', 'mother_motif_counts', 'child_motif_counts']
-colformats = {'trid': str, 'denovo_coverage': 'UInt16', 'per_allele_reads_father': str, 'per_allele_reads_mother': str, 'per_allele_reads_child': str, 'index': 'UInt8', 'father_motif_counts': str, 'mother_motif_counts': str, 'child_motif_counts': str}
+usecols = ['trid', 'denovo_coverage','per_allele_reads_father', 'per_allele_reads_mother',
+           'per_allele_reads_child', 'index', 'father_MC', 'mother_MC', 'child_MC',
+           'father_overlap_coverage', 'mother_overlap_coverage', 'allele_ratio', 'child_ratio']
+colformats = {'trid': str, 'denovo_coverage': 'UInt16', 'per_allele_reads_father': str,
+                'per_allele_reads_mother': str, 'per_allele_reads_child': str,
+                'index': 'UInt8', 'father_MC': str, 'mother_MC': str, 'child_MC': str,
+                'father_overlap_coverage': str, 'mother_overlap_coverage': str,
+                'allele_ratio': 'float32', 'child_ratio': 'float32'}
 # Not currently used
 # 'allele_origin', 'mean_diff_father', 'mean_diff_mother',
-# 'genotype', 'allele_coverage', 'allele_ratio', 'child_coverage', 'child_ratio',  'father_dropout_prob', 'mother_dropout_prob',  'denovo_status', 'father_dropout', 'mother_dropout', 'child_dropout', 'maxlh']
+# 'genotype', 'allele_coverage', 'child_coverage', 'father_dropout_prob',
+# 'mother_dropout_prob',  'denovo_status', 'father_dropout', 'mother_dropout',
+# 'child_dropout', 'maxlh']
 
 def get_chunks(files):
     """Read the next chunk for all of the files in the list.
@@ -39,21 +47,39 @@ def sum_depth(depths):
     """Sum the depth for each allele"""
     return [sum(pd.to_numeric(x.split(','))) for x in depths]
 
+def min_depth(depths):
+    """Sum the depth for each allele"""
+    return [min(pd.to_numeric(x.split(','))) for x in depths]
+
 def min_depth_trio(chunk):
     """Find the minimum depth accross trio for each locus in the chunk"""
 
     # Sum the depth for each individual then take the minimum accross the trio
-    return chunk[['per_allele_reads_father', 
-          'per_allele_reads_mother', 
+    return chunk[['per_allele_reads_father',
+          'per_allele_reads_mother',
           'per_allele_reads_child']].apply(sum_depth, axis=0).min(axis=1)
+
+def min_allelic_depth(chunk):
+    """Find the minimum allelic depth accross trio for each locus in the chunk"""
+
+    # Take the minimum accross the trio
+    return chunk[['per_allele_reads_father',
+          'per_allele_reads_mother',
+          'per_allele_reads_child']].apply(min_depth, axis=0).min(axis=1)
+
 
 # Filter ideas from Tom S:
 # child_coverage: 31
 # denovo_coverage: 2
 
+# min allelic depth of 5 in trio
+# ratio of depths between parents?
+# allele ratio
+# child ratio
+
 min_depth_filtered = 0
 complex_filtered = 0
-def callable_loci(chunk, min_depth=10):
+def callable_loci(chunk, min_depth=10, min_allelic_depth=5):
     """Filter the chunk to keep only the loci that pass the filters"""
     global min_depth_filtered
     global complex_filtered
@@ -61,21 +87,22 @@ def callable_loci(chunk, min_depth=10):
     min_depth_filtered += sum(chunk['min_depth'] < min_depth)
     complex_filtered += sum(chunk['min_motiflen'] != chunk['max_motiflen'])
 
-    #print(chunk[chunk['child_motif_counts'].str.contains('_') == True])
-    #print(chunk[chunk['child_motif_counts'].str.contains('_') == False])
+    #print(chunk[chunk['child_MC'].str.contains('_') == True])
+    #print(chunk[chunk['child_MC'].str.contains('_') == False])
     #print(chunk[chunk['min_motiflen'] == chunk['max_motiflen']])
 
     #print(f'Filtered out {min_depth_filtered} loci with depth < 10')
     #print(f'Filtered out {complex_filtered} loci with complex motifs')
 
     keep_loci = (
-        (chunk['min_depth'] >= min_depth) & 
-        #(chunk['mother_dropout_prob'] < 0.005) & 
-        #(chunk['father_dropout_prob'] < 0.005) & 
-        #(chunk['mother_dropout'] == "N") & 
+        (chunk['min_depth'] >= min_depth) &
+        (chunk['min_allelic_depth'] >= min_allelic_depth) &
+        #(chunk['mother_dropout_prob'] < 0.005) &
+        #(chunk['father_dropout_prob'] < 0.005) &
+        #(chunk['mother_dropout'] == "N") &
         #(chunk['father_dropout'] == "N") &
         (chunk['min_motiflen'] == chunk['max_motiflen'])
-        #(chunk['child_motif_counts'].str.contains('_') == False)
+        #(chunk['child_MC'].str.contains('_') == False)
         )
     return chunk[keep_loci]
 
@@ -84,8 +111,8 @@ def novel_allele(row):
     
     Once we have phasing, this could be adapted.
     """
-    kid_mc = row['child_motif_counts'].split(',')[row['index']]
-    if kid_mc in row['father_motif_counts'].split(',') or kid_mc in row['mother_motif_counts'].split(','):
+    kid_mc = row['child_MC'].split(',')[row['index']]
+    if kid_mc in row['father_MC'].split(',') or kid_mc in row['mother_MC'].split(','):
         return False
     else:
         return True
@@ -98,9 +125,12 @@ def identify_dnms(chunk):
     pd.options.mode.chained_assignment = 'warn'
     is_dnm = (
         (chunk['candidate_dnm'] == True) &
-        (chunk['denovo_coverage'] >= 2) #&
-        #(chunk['allele_ratio'] >= 0.3) &
-        #(chunk['child_ratio'] >= 0.1)
+        (chunk['denovo_coverage'] >= 2) &
+        (chunk['father_overlap_coverage'] == '0,0') &
+        (chunk['mother_overlap_coverage'] == '0,0') &
+        (chunk['allele_ratio'] >= 0.7) &
+        (chunk['child_ratio'] >= 0.25) &
+        (chunk['child_ratio'] <= 0.75)
         )
 
     return is_dnm
@@ -113,7 +143,7 @@ def count_dnms(chunk):
 
     return n_dnms, n_callable
 
-def main(outfile: str, samples: str, 
+def main(outfile: str, samples: str,
          TRids: str = '',
          annotations: str = '../repeat-catalogs/human_GRCh38_no_alt_analysis_set.palladium-v1.0.trgt.annotations.bed',
          ):
@@ -128,10 +158,13 @@ def main(outfile: str, samples: str,
     #T2T:
     #chm13v2.0_maskedY_rCRS.palladium-v1.0.trgt.annotations.bed
 
-    annot_df = pd.read_csv(annotations, sep='\t', 
-                            usecols=['TRid', 'longest_homopolymer', 'gc_content', 'n_motifs', 'min_motiflen', 'max_motiflen', 'start', 'end'],
-                            dtype={'TRid': str, 'longest_homopolymer': 'UInt16', 'gc_content': 'float32', 'n_motifs': 'UInt16', 
-                                   'min_motiflen': 'UInt16', 'max_motiflen': 'UInt16', 'start': 'UInt32', 'end': 'UInt32'})
+    annot_df = pd.read_csv(annotations, sep='\t',
+                            usecols=['TRid', 'longest_homopolymer', 'gc_content', 'n_motifs',
+                                     'min_motiflen', 'max_motiflen', 'start', 'end'],
+                            dtype={'TRid': str, 'longest_homopolymer': 'UInt16',
+                                   'gc_content': 'float32', 'n_motifs': 'UInt16',
+                                   'min_motiflen': 'UInt16', 'max_motiflen': 'UInt16',
+                                   'start': 'UInt32', 'end': 'UInt32'})
     annot_df.rename(columns={'TRid': 'trid'}, inplace=True)
 
     if TRids:
@@ -157,29 +190,32 @@ def main(outfile: str, samples: str,
         chunk = pd.merge(chunk, annot_df, on='trid', how='left')
 
         chunk['min_depth'] = min_depth_trio(chunk)
+        chunk['min_allelic_depth'] = min_allelic_depth(chunk)
+        
         chunk = callable_loci(chunk)
 
         chunk['reflen'] = chunk['end'] - chunk['start']
 
         for motiflen, group in chunk.groupby('min_motiflen'):
             dnms, callable = count_dnms(group)
-            all_dnms = all_dnms_list.append(pd.Series({'Sample': sample, 
-                                                    'DNMs': dnms, 'Callable': callable, 
+            all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
+                                                    'DNMs': dnms, 'Callable': callable,
                                                     'Group': 'motiflen', 'Value': motiflen,
                                                     'DNMrate': dnms/callable}))
         
         for longest_homopolymer, group in chunk.groupby('longest_homopolymer'):
             dnms, callable = count_dnms(group)
-            all_dnms = all_dnms_list.append(pd.Series({'Sample': sample, 
-                                                    'DNMs': dnms, 'Callable': callable, 
-                                                    'Group': 'longest_homopolymer', 'Value': longest_homopolymer,
+            all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
+                                                    'DNMs': dnms, 'Callable': callable,
+                                                    'Group': 'longest_homopolymer',
+                                                    'Value': longest_homopolymer,
                                                     'DNMrate': dnms/callable}))
         
         try:
             for reflen, group in chunk.groupby('reflen'):
                 dnms, callable = count_dnms(group)
-                all_dnms = all_dnms_list.append(pd.Series({'Sample': sample, 
-                                                        'DNMs': dnms, 'Callable': callable, 
+                all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
+                                                        'DNMs': dnms, 'Callable': callable,
                                                         'Group': 'reflen', 'Value': reflen,
                                                         'DNMrate': dnms/callable}))
         except KeyError:
@@ -188,8 +224,8 @@ def main(outfile: str, samples: str,
         try:
             for gc_content, group in chunk.groupby('gc_content'):
                 dnms, callable = count_dnms(group)
-                all_dnms = all_dnms_list.append(pd.Series({'Sample': sample, 
-                                                        'DNMs': dnms, 'Callable': callable, 
+                all_dnms = all_dnms_list.append(pd.Series({'Sample': sample,
+                                                        'DNMs': dnms, 'Callable': callable,
                                                         'Group': 'gc_content', 'Value': gc_content,
                                                         'DNMrate': dnms/callable}))
         except KeyError:
