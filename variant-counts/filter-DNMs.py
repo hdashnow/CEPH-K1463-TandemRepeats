@@ -125,7 +125,7 @@ def identify_dnms(chunk):
         (chunk['denovo_coverage'] >= 2) #&
         # (chunk['father_overlap_coverage'] == '0,0') &
         # (chunk['mother_overlap_coverage'] == '0,0') &
-        (chunk['parent_overlap_proportion'] <= 0.05) & # proportion of reads supporting the denovo across both parents
+        (chunk['parent_overlap_proportion'] <= 0.05) #& # proportion of reads supporting the denovo across both parents
         # (chunk['child_ratio'] >= 0.25) &
         # (chunk['child_ratio'] <= 0.75) &
         #(chunk['allele_ratio'] >= 0.5) # proportion of reads supporting that allele that support the denovo allele
